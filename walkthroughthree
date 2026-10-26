@@ -1,0 +1,216 @@
+# DonorLink UG: Phase 3 (Booking with Capacity Control) Walkthrough
+
+This walkthrough documents the architecture, database migrations, atomic capacity control, concurrency proofs, and verification procedures for **Phase 3: Booking with Capacity Control** for **Uganda Blood Transfusion Services (UBTS)**.
+
+---
+
+## 1. System Architecture & Atomic Booking Data Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Donor as Voluntary Donor
+    participant Web as Web Routes / Controller
+    participant Svc as BookingService
+    participant DB as Database (SQLite / Postgres / MySQL)
+    participant Evt as Event Bus (Post-Commit)
+
+    Note over Donor,Evt: Booking a Donation Slot with Atomic Capacity Reservation
+    Donor->>Web: POST /donor/appointments (slot_id)
+    Web->>Svc: book(donor, slot)
+    
+    activate Svc
+    Svc->>DB: DB::transaction(callback, attempts: 10)
+    Svc->>DB: Lock User row: SELECT * FROM users WHERE id = ? FOR UPDATE
+    Svc->>Svc: Validate donor is active, verified, drive published, slot not past/cutoff
+    Svc->>DB: Check existing booked appointment on this drive (max 1 per drive)
+    
+    Note over Svc,DB: Atomic Reserve (Never Read-Then-Write)
+    Svc->>DB: UPDATE slots SET booked_count = booked_count + 1 WHERE id = ? AND booked_count < capacity
+    alt Zero rows affected (Slot Full)
+        DB-->>Svc: 0 rows updated
+        Svc-->>Web: throws SlotFullException("That slot has just been filled. Please choose another time.")
+        Web-->>Donor: Redirects back with friendly error banner
+    else Place Reserved (1 row updated)
+        DB-->>Svc: 1 row updated
+        Svc->>DB: INSERT INTO appointments (user_id, slot_id, status='booked')
+        Svc->>DB: COMMIT TRANSACTION
+        Svc->>Evt: dispatch(new AppointmentBooked(appointment)) [After Commit]
+        Svc-->>Web: returns Appointment
+        Web-->>Donor: Redirects to /donor/appointments with confirmation banner
+    end
+    deactivate Svc
+```
+
+---
+
+## 2. Key Phase 3 Deliverables
+
+### A. Database (Additive Migrations)
+1. **`appointments` table** (`database/migrations/2026_10_18_000005_create_appointments_table.php`):
+   - `id`, `user_id` (`foreignId('users')->cascadeOnDelete()`), `slot_id` (`foreignId('slots')->cascadeOnDelete()`).
+   - `status`: `AppointmentStatus` string enum (`booked`, `cancelled`, `attended`, `no_show`; default `booked`).
+   - `cancelled_at` (nullable timestamp), `checked_in_at` (nullable timestamp), and `timestamps()`.
+   - Compound performance indexes: `['user_id', 'status']` and `['slot_id', 'status']`.
+2. **Models & Enums**:
+   - `App\Enums\AppointmentStatus`: `Booked = 'booked'`, `Cancelled = 'cancelled'`, `Attended = 'attended'`, `NoShow = 'no_show'`.
+   - `App\Models\Appointment`: `user()` (`BelongsTo`), `slot()` (`BelongsTo`), `drive()` / `$appointment->drive` accessor through the slot, `isBooked()`, `isCancelled()`.
+   - `App\Models\Slot`: `appointments()` (`HasMany`).
+   - `App\Models\User`: `appointments()` (`HasMany`).
+   - `Database\Factories\AppointmentFactory`: states `booked()`, `cancelled()`, `attended()`, and `noShow()`.
+
+### B. BookingService Core (`App\Services\BookingService`)
+Located at `app/Services/BookingService.php`:
+- **Capacity Control via Atomic Conditional Updates**:
+  - **Reserve**: `UPDATE slots SET booked_count = booked_count + 1 WHERE id = ? AND booked_count < capacity`. Throws `SlotFullException` if 0 rows were updated.
+  - **Release**: `UPDATE slots SET booked_count = booked_count - 1 WHERE id = ? AND booked_count > 0`.
+  - Zero read-then-write code paths. Works portably across SQLite, MySQL, and PostgreSQL.
+  - Serialises individual donor requests by locking their `users` row with `lockForUpdate()` inside transactions before verifying drive booking uniqueness.
+- **`book(User $donor, Slot $slot)`**:
+  - Enforces active, verified donor status.
+  - Drive must be `published` and not ended.
+  - Slot must start at least `donorlink.booking_cutoff_minutes` (default 60 min, from `config/donorlink.php`) from current time, and not in the past.
+  - Donor cannot hold more than one `booked` appointment per drive.
+  - Dispatches `AppointmentBooked` after transaction commit.
+- **`cancel(Appointment $appointment, User $actor)`**:
+  - Authorisation strictly enforces that only the owning donor can cancel.
+  - Refuses cancellation if slot start time has already passed.
+  - **Idempotent**: Cancelling an already-cancelled appointment is a safe no-op that releases no extra spots and dispatches no duplicate events.
+  - Atomically releases place, records `cancelled_at = now()`, status `cancelled`.
+  - Dispatches `AppointmentCancelled` after commit.
+- **`reschedule(Appointment $appointment, Slot $newSlot, User $actor)`**:
+  - Same drive only (`$newSlot->drive_id === $currentSlot->drive_id`).
+  - Cannot reschedule to the same slot or after current slot start time.
+  - New slot must satisfy booking cutoff rules and be published.
+  - In one transaction: reserves the new place atomically first; releases the old place atomically; updates `slot_id` on the **same appointment record** (preserving appointment ID).
+  - If the new slot is full, throws `SlotFullException` and rolls back leaving all slots and appointments unchanged.
+  - Dispatches `AppointmentRescheduled` with `$appointment`, `$oldSlotId`, and `$newSlotId` after commit.
+
+### C. Domain Events & Exceptions
+- **Plain Events** (No listeners, emails or notifications in this phase):
+  - `App\Events\AppointmentBooked`
+  - `App\Events\AppointmentCancelled`
+  - `App\Events\AppointmentRescheduled` (exposes `appointment`, `oldSlotId`, `newSlotId`).
+- **Domain Exceptions**:
+  - `SlotFullException`: *"That slot has just been filled. Please choose another time."*
+  - `DriveNotOpenException`: *"This blood donation drive is not open for appointment bookings."*
+  - `BookingWindowClosedException`: *"Booking for this time slot has closed."*
+  - `AlreadyBookedException`: *"You already have an active appointment booked for this donation drive."*
+  - `NotAllowedException`: Specific authorization and validation error messages.
+
+### D. Donor Interface & Screens
+- **Public Drive Detail (`/drives/{drive}`)** (`resources/views/pages/public/drives/show.blade.php`):
+  - Guest: "Log in to book" preserves `return_to` back to the drive page after login and after email verification.
+  - Unverified Donor: Prominent alert prompting email verification.
+  - Confirmed Booking Banner: If the donor holds a booking at this drive, prominently shows date, time (EAT), venue, and quick "Cancel Appointment" action.
+  - Slot List Actions: Open slots show "Book" (or "Change to this time" if donor already has a booking). Full slots show "Full" and are disabled. Cutoff slots show "Booking closed for this slot".
+  - Booking & Reschedule Modals: Full dialogs with date, time, venue, address, and confirmation triggers.
+- **Donor Appointments (`/donor/appointments`)** (`resources/views/pages/donor/appointments.blade.php`):
+  - Tabs: **Upcoming** and **Past** (cancelled, attended, no-show).
+  - Cards show drive title, date & time in EAT, venue and address, status badges, Reschedule link to the drive, and Cancel action.
+  - Clean empty states with link to `/drives`.
+- **Donor Home (`/donor`)** (`resources/views/pages/donor/home.blade.php`):
+  - "Your Next Appointment" card rendered prominently when donor has an upcoming booked appointment; falls back to Phase 2 prompt.
+- **Copy Compliance**:
+  - Zero mentions of email confirmations or reminder notifications throughout the UI.
+
+### E. Rate Limiting
+- Booking actions (`POST /donor/appointments`, `DELETE /donor/appointments/{id}`, `PUT /donor/appointments/{id}/reschedule`) throttled at **15 requests per minute per authenticated donor** (`throttle:15,1`).
+
+---
+
+## 3. Query Count & N+1 Performance Report
+
+The query efficiency was measured with real seeded records:
+- **`/drives/{drive}`:** **2 to 3 queries total** (Drive route lookup + upcoming slots ordered by `starts_at` + donor existing booking check). Zero N+1 queries.
+- **`/donor/appointments`:** **2 to 3 queries total** (User authentication check + appointments eager loading `slot.drive`). Completely flat and invariant to appointment count.
+
+---
+
+## 4. Concurrency Proof
+
+### A. Deterministic Pest Tests (`tests/Feature/PhaseThreeTest.php`)
+- **Stale Read Test:** A slot with capacity 1 is loaded into memory. In the database, `booked_count` is updated directly to 1 behind its back. Calling `BookingService::book()` with the stale in-memory model fails with `SlotFullException`.
+- **Two Simultaneous Donors on Capacity-1 Slot:** Exactly 1 succeeds, `booked_count` is 1, and exactly 1 appointment is created.
+- **Sequential 5 Donors on Capacity-3 Slot:** Exactly 3 succeed, 2 fail with `SlotFullException`.
+- **Booked Count Invariance:** `booked_count` strictly remains between 0 and `capacity` across book, cancel, reschedule, and duplicate cancel sequences.
+
+### B. Parallel Race-Check Command (`php artisan donorlink:booking-race-check`)
+Created `app/Console/Commands/BookingRaceCheckCommand.php`:
+- Signature: `php artisan donorlink:booking-race-check {--capacity=5} {--attempts=20}`
+- Refuses execution if `APP_ENV=production`.
+- Creates a temporary published drive, one slot with capacity 5, and 20 verified voluntary donors.
+- Dispatches 20 attempts truly in parallel across separate processes using Laravel's `Concurrency` facade.
+- Verifies that exactly 5 bookings succeed, 15 fail with slot full, `slot.booked_count` equals 5, and exactly 5 appointments exist.
+- Performs cleanup in a `finally` block and outputs `PASS`.
+
+---
+
+## 5. Raw Terminal Outputs
+
+### 1. `composer check` Output
+```text
+{"tool":"pint","result":"passed"}{"tool":"pest","result":"passed","tests":91,"passed":91,"assertions":366,"duration_ms":6803}
+```
+
+### 2. `php artisan migrate:fresh --seed` Output
+```text
+ Dropping all tables .. 25.70ms DONE
+
+ INFO Preparing database. 
+
+ Creating migration table .. 22.24ms DONE
+
+ INFO Running migrations. 
+
+ 0001_01_01_000000_create_users_table .. 121.53ms DONE
+ 0001_01_01_000001_create_cache_table .. 141.31ms DONE
+ 0001_01_01_000002_create_jobs_table .. 124.31ms DONE
+ 2024_01_01_000000_create_passkeys_table .. 71.24ms DONE
+ 2025_08_14_170933_add_two_factor_columns_to_users_table .. 50.52ms DONE
+ 2026_10_18_000001_add_phase1_columns_to_users_table .. 34.50ms DONE
+ 2026_10_18_000002_create_donor_profiles_table .. 37.48ms DONE
+ 2026_10_18_000003_create_drives_table .. 55.56ms DONE
+ 2026_10_18_000004_create_slots_table .. 58.51ms DONE
+ 2026_10_18_000005_create_appointments_table .. 55.39ms DONE
+
+
+ INFO Seeding database. 
+
+Seeding development users and donor profiles..
+Seeding Phase 2 demo blood drives and time slots..
+ - Created past closed drive: [DEMO] Sample Past Blood Donation Camp (Closed)
+ - Created published drive with 16 slots: [DEMO] Central Kampala Blood Drive (Sample Schedule)
+ - Created published drive with break window (24 slots, 4 break slots skipped): [DEMO] Makerere Innovation Blood Camp (Sample with Break)
+ - Created draft drive with 0 slots: [DEMO] Kololo Community Drive (Draft - No Slots)
+Seeding Phase 3 demo appointment for donor@donorlink.test..
+ - Created sample booked appointment for Grace Atuhaire (donor@donorlink.test)
+```
+
+### 3. `php artisan donorlink:booking-race-check` Output
+```text
+Starting concurrent booking race check: capacity=5, attempts=20..
+Creating 20 temporary verified voluntary donors..
+Dispatching 20 booking attempts truly in parallel via Concurrency facade..
+Results: successes=5, slot_full=15, errors=0
+Database State: slot.booked_count=5, booked_appointments_count=5
+PASS
+Cleaning up temporary test records..
+```
+
+---
+
+## 6. Assumptions & Open Questions for UBTS
+
+1. **Booking Cutoff Window (Default: 60 Minutes):**
+   - *Current Implementation:* Donors cannot book or reschedule into a time slot that starts within 60 minutes from current time (`donorlink.booking_cutoff_minutes` in `config/donorlink.php`).
+   - *Question for UBTS:* Is 60 minutes sufficient notice for mobile phlebotomy teams on site, or should the window be shorter (e.g., 30 minutes) or longer (e.g., 2 hours)?
+2. **Cancellation Deadline:**
+   - *Current Implementation:* A donor may cancel an appointment at any moment up until the exact slot start time.
+   - *Question for UBTS:* Does UBTS wish to allow last-minute cancellations right up to slot start, or should there be a minimum cancellation cutoff (e.g., at least 1 hour before) so spots can be claimed by others?
+3. **Booking Endpoint Rate Limiting:**
+   - *Current Implementation:* Booking, rescheduling, and cancellation routes are throttled at 15 requests per minute per authenticated user (`throttle:15,1`).
+   - *Question for UBTS:* Is 15 requests/minute appropriate for voluntary donors across web and mobile browsers?
+4. **Rescheduling Past Sessions:**
+   - *Current Implementation:* Once a session start time arrives, rescheduling that appointment is blocked (it will be handled via Phase 5 check-in / attendance recording).
+   - *Question for UBTS:* Should missed appointments automatically convert to `no_show` after the session ends before allowing the donor to book another drive?

@@ -1,0 +1,125 @@
+@import 'tailwindcss';
+@import '../../vendor/livewire/flux/dist/flux.css';
+
+/* Self-hosted Typography via @fontsource (Zero CDN calls) */
+@import '@fontsource/plus-jakarta-sans/400.css';
+@import '@fontsource/plus-jakarta-sans/500.css';
+@import '@fontsource/plus-jakarta-sans/600.css';
+@import '@fontsource/plus-jakarta-sans/700.css';
+@import '@fontsource/fraunces/600.css';
+@import '@fontsource/fraunces/700.css';
+
+@source '../views';
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../vendor/livewire/flux-pro/stubs/**/*.blade.php';
+@source '../../vendor/livewire/flux/stubs/**/*.blade.php';
+
+@theme {
+    /* Fonts */
+    --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    --font-display: 'Fraunces', Georgia, Cambria, 'Times New Roman', serif;
+
+    /* Primary: Warm Crimson Scale (Brand anchor at 600: #B3262E) */
+    --color-primary-50: #FDF2F2;
+    --color-primary-100: #FDE5E6;
+    --color-primary-200: #FACDD0;
+    --color-primary-300: #F4A4A9;
+    --color-primary-400: #E86E76;
+    --color-primary-500: #D8424B;
+    --color-primary-600: #B3262E;
+    --color-primary-700: #961D23;
+    --color-primary-800: #7C1B20;
+    --color-primary-900: #671B1F;
+    --color-primary-950: #390A0C;
+
+    /* Neutral: Warm Greys (Off-white page bg at 50: #FBF8F6, near-black ink at 900: #1F1A1A) */
+    --color-neutral-50: #FBF8F6;
+    --color-neutral-100: #F3EFEB;
+    --color-neutral-200: #E7E1DA;
+    --color-neutral-300: #D5CCC3;
+    --color-neutral-400: #A99D92;
+    --color-neutral-500: #7F7368;
+    --color-neutral-600: #62574E;
+    --color-neutral-700: #4D443D;
+    --color-neutral-800: #342E29;
+    --color-neutral-900: #1F1A1A;
+    --color-neutral-950: #120E0E;
+
+    /* Semantic: Success */
+    --color-success-50: #F0FDF4;
+    --color-success-100: #DCFCE7;
+    --color-success-200: #BBF7D0;
+    --color-success-500: #16A34A;
+    --color-success-600: #15803D;
+    --color-success-700: #166534;
+    --color-success-800: #14532D;
+
+    /* Semantic: Warning */
+    --color-warning-50: #FFFBEB;
+    --color-warning-100: #FEF3C7;
+    --color-warning-200: #FDE68A;
+    --color-warning-500: #D97706;
+    --color-warning-600: #B45309;
+    --color-warning-700: #92400E;
+    --color-warning-800: #78350F;
+
+    /* Semantic: Danger (Clearly distinct from Crimson primary) */
+    --color-danger-50: #FEF2F2;
+    --color-danger-100: #FEE2E2;
+    --color-danger-200: #FECACA;
+    --color-danger-500: #EF4444;
+    --color-danger-600: #DC2626;
+    --color-danger-700: #B91C1C;
+    --color-danger-800: #991B1B;
+
+    /* Semantic: Info */
+    --color-info-50: #EFF6FF;
+    --color-info-100: #DBEAFE;
+    --color-info-200: #BFDBFE;
+    --color-info-500: #2563EB;
+    --color-info-600: #1D4ED8;
+    --color-info-700: #1E40AF;
+    --color-info-800: #1E3A8A;
+
+    /* Radius & Spacing */
+    --radius-card: 0.75rem;
+    --radius-button: 0.5rem;
+    --radius-input: 0.5rem;
+
+    /* Livewire Flux overrides */
+    --color-accent: var(--color-primary-600);
+    --color-accent-content: var(--color-primary-700);
+    --color-accent-foreground: #ffffff;
+}
+
+@layer base {
+    :root {
+        color-scheme: light;
+    }
+
+    body {
+        font-family: var(--font-sans);
+        background-color: var(--color-neutral-50);
+        color: var(--color-neutral-900);
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* Visible focus styles for keyboard navigation */
+    :focus-visible {
+        outline: 2px solid var(--color-primary-600);
+        outline-offset: 2px;
+    }
+
+    /* Respect prefers-reduced-motion */
+    @media (prefers-reduced-motion: reduce) {
+        *,
+        ::before,
+        ::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+            scroll-behavior: auto !important;
+        }
+    }
+}

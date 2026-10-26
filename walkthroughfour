@@ -1,0 +1,384 @@
+# DonorLink UG: Phase 4 (Email Notifications and Reminders) Walkthrough
+
+This walkthrough documents the architecture, database schema, calendar generation, automated reminder sweeps, Brevo send budget protections, staff announcement dispatching, and verification procedures for **Phase 4: Email Notifications and Reminders** for **Uganda Blood Transfusion Services (UBTS)**.
+
+---
+
+## 1. System Architecture & Notification Lifecycle
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Donor as Voluntary Donor
+    actor Staff as UBTS Staff
+    participant Web as Application Controller
+    participant Svc as MailBudget Service
+    participant Q as Database Queue / Scheduler
+    participant Log as notification_logs Table
+    participant Mail as Brevo SMTP / Log Mailer
+
+    Note over Donor,Mail: 1. Transactional Booking / Reschedule / Cancel Events
+    Donor->>Web: Books / Reschedules / Cancels Appointment
+    Web->>Log: Insert notification_logs (status='queued', unique dedupe_key)
+    Web->>Q: Dispatch queued Notification (tries=3, backoff=[60,300,900])
+    Q->>Mail: shouldSend() check -> generates RFC 5545 .ics -> sends mail
+    Mail-->>Log: Update status='sent', sent_at=now() (or 'skipped' / 'failed')
+
+    Note over Donor,Mail: 2. Scheduled Reminders Sweep (Every 10 Minutes)
+    Q->>Web: php artisan donorlink:send-reminders
+    Web->>Log: Query current booked slots in 24h & 2h windows
+    Web->>Log: Check 3-hour skip rule (recent confirmation/reschedule)
+    alt Within 3h of previous confirmation/reschedule
+        Web->>Log: Record status='skipped' ("Confirmation sent < 3h ago")
+    else Eligible for Reminder
+        Web->>Log: Insert queued row (dedupe_key="reminder_{variant}:appointment:{id}:slot:{slot_id}")
+        Web->>Q: Dispatch AppointmentReminder notification
+    end
+
+    Note over Staff,Mail: 3. Staff New-Drive Announcements & Batch Dispatching
+    Staff->>Web: Opens Published Drive -> Clicks "Send Announcement"
+    Web->>Svc: MailBudget::remaining() check
+    Web->>Web: Modal confirms eligible opted-in donors & estimated 10m runs
+    Staff->>Web: POST /staff/drives/{drive}/announcement
+    Web->>Log: Bulk insert queued logs for opted-in donors (dedupe_key="announcement:drive:{id}:user:{uid}")
+    
+    loop Every 10 Minutes via Scheduler
+        Q->>Web: php artisan donorlink:dispatch-announcements
+        Web->>Svc: Check remaining budget >= transactional reserve
+        alt Budget Available
+            Web->>Log: Fetch up to announcement_chunk (default 40) queued logs
+            Web->>Mail: Send NewDriveAnnouncement (includes signed unsubscribe link)
+            Mail-->>Log: Update status='sent', sent_at=now()
+        else Budget Below Reserve
+            Web->>Q: Stop and resume on next run
+        end
+    end
+```
+
+---
+
+## 2. Key Phase 4 Deliverables
+
+### A. Database (Additive Migrations)
+1. **`notification_logs` table** (`database/migrations/2026_10_18_000006_create_notification_logs_table.php`):
+   - `user_id`: Foreign key to `users` (`cascadeOnDelete`).
+   - `type`: String identifying notification type (`appointment_confirmed`, `appointment_rescheduled`, `appointment_cancelled`, `reminder_24h`, `reminder_2h`, `new_drive_announcement`).
+   - `channel`: String, always `mail`.
+   - `status`: `NotificationStatus` enum (`queued`, `sent`, `failed`, `skipped`).
+   - `sent_at`: Nullable timestamp in UTC.
+   - `related_type` & `related_id`: Nullable polymorphic reference to `Appointment` or `Drive`.
+   - `error`: Nullable string, strictly truncated to at most 500 characters using `mb_substr`.
+   - `dedupe_key`: Nullable unique string enforcing idempotency at the database engine level.
+   - Performance compound indexes: `['user_id', 'type']` and `['status', 'created_at']`.
+   - *Strict privacy guarantee: No message bodies, email links, or sensitive tokens are stored.*
+2. **`users.notify_new_drives` column** (`database/migrations/2026_10_18_000007_add_notify_new_drives_to_users_table.php`):
+   - Boolean column defaulting to `true`.
+   - Added to `$fillable` and cast as `boolean` on `App\Models\User`.
+3. **Models & Enums**:
+   - `App\Enums\NotificationStatus`: `Queued = 'queued'`, `Sent = 'sent'`, `Failed = 'failed'`, `Skipped = 'skipped'`, with UI labels and badge styling variants.
+   - `App\Models\NotificationLog`: Belongs to `user`, polymorphic `related()`, scopes `sent()` and `queued()`.
+   - `Database\Factories\NotificationLogFactory`: Model states `queued()`, `sent()`, `failed()`, `skipped()`.
+
+---
+
+### B. Notifications & Native RFC 5545 Calendar File
+Built as queued Laravel Notifications implementing `ShouldQueue`, with `tries = 3` and `backoff = [60, 300, 900]`. All use the shared branded UBTS email layout with plain-text alternatives:
+
+| Notification | Trigger Event / Source | Key Payload & Behavior |
+|---|---|---|
+| `AppointmentConfirmed` | `AppointmentBooked` event listener | Drive title, date & time in EAT, venue, address, view button, reschedule/cancel links, attached `.ics` (`donorlink-appointment.ics`) |
+| `AppointmentRescheduled` | `AppointmentRescheduled` event listener | Updated date & time in EAT, updated `.ics` with identical `UID` and incremented `SEQUENCE` |
+| `AppointmentCancelled` | `AppointmentCancelled` event listener | Cancellation confirmation notice and link to browse other donation drives |
+| `AppointmentReminder` | Scheduled sweep (`donorlink:send-reminders`) | 24h ("tomorrow") and 2h ("in approximately 2 hours") variants with venue, address, and ID arrival logistics |
+| `NewDriveAnnouncement` | Scheduled batch dispatcher (`donorlink:dispatch-announcements`) | Published drive title, dates in EAT, venue, address, signed one-click unsubscribe link, and RFC 8058 headers |
+
+#### Just-In-Time Validity Check & Retry Failure Handling
+Through `App\Notifications\Concerns\LogsNotification`:
+- `shouldSend()` performs validity verification at execution time: checks if donor is active and verified, if appointment remains in `booked` status (except cancellations), and if the slot has not changed. If invalid, the log updates to `skipped` with a clear reason.
+- `failed(Throwable $e)` records `failed` with truncated error (max 500 characters) upon final retry failure.
+
+#### Deterministic `.ics` Calendar Generation (`App\Support\IcsGenerator`)
+Native PHP implementation conforming to RFC 5545 without external dependencies:
+- **Stable UID:** `appointment-{id}@{host}` (domain derived dynamically from `APP_URL` host).
+- **Method:** `METHOD:PUBLISH`.
+- **Deterministic SEQUENCE:** Starts at `SEQUENCE:0`. Increments without requiring a new database column by counting reschedule logs for the appointment:
+  ```php
+  public static function resolveSequence(Appointment $appointment): int
+  {
+      return NotificationLog::query()
+          ->where('related_type', Appointment::class)
+          ->where('related_id', $appointment->id)
+          ->where('type', 'appointment_rescheduled')
+          ->whereIn('status', [NotificationStatus::Sent->value, NotificationStatus::Queued->value])
+          ->count();
+  }
+  ```
+- **Formatting:** Line folding at <= 75 octets with CRLF line endings (`\r\n`), escaping for commas (`\,`), semicolons (`\;`), backslashes (`\\`), and newlines (`\n`). Attached as `text/calendar; charset=UTF-8; method=REQUEST`.
+
+---
+
+### C. Scheduled Reminders Sweep (`App\Console\Commands\SendRemindersCommand`)
+Command: `php artisan donorlink:send-reminders` (scheduled every 10 minutes):
+- **Current State Calculation:** Queries all `booked` appointments whose slot starts in the future and evaluates time-to-start:
+  - **24-hour reminder:** starts in 24 hours to 22 hours.
+  - **2-hour reminder:** starts in 2 hours to 1 hour.
+- **Closed Window Protection:** Windows are closed at the late end so stale reminders are never sent if a sweep is delayed.
+- **Idempotency:** Unique deduplication key: `reminder_{variant}:appointment:{id}:slot:{slot_id}`.
+- **3-Hour Skip Rule:** Bypasses reminder and records `skipped` if an appointment confirmation or reschedule email was sent for the same appointment less than 3 hours earlier.
+- **Non-Booked Exclusion:** Cancelled, attended, and no-show appointments are excluded.
+- **Simulation Flag:** Dev-only option `--now="YYYY-MM-DD HH:MM"` (EAT) simulates time; refuses to execute in production (`APP_ENV=production`).
+
+---
+
+### D. Brevo Send Budget Protection (`App\Services\MailBudget`)
+Configured in `config/donorlink.php` via environment variables:
+- `DONORLINK_MAIL_DAILY_BUDGET=250` (Daily sending ceiling).
+- `DONORLINK_MAIL_TRANSACTIONAL_RESERVE=100` (Guaranteed reserve dedicated strictly to transactional emails).
+- `DONORLINK_MAIL_ANNOUNCEMENT_CHUNK=40` (Batch size per 10-minute dispatch run).
+- **Rolling 24-Hour Counting:** Evaluates emails sent in the rolling past 24 hours (`sentInLast24Hours()`) from `notification_logs`, protecting against arbitrary provider daily counter reset times.
+- **Transactional Protection:** Transactional emails (confirmations, reschedules, cancellations, reminders, email verification) are **never blocked**. If 24-hour sent volume exceeds 90% of `daily_budget`, a warning is logged to `laravel.log`.
+- **Announcement Throttling:** Announcements stop when `daily_budget - sent_in_last_24h < transactional_reserve`.
+- Exposes `MailBudget::remaining()` to controllers and views.
+
+---
+
+### E. Staff-Triggered Announcements & Batch Dispatching
+- **Deliberate Trigger:** Staff initiate announcements manually from published drive detail pages; announcements are never sent automatically upon publication.
+- **Confirmation Modal:** Displays number of eligible opted-in recipients (`role = donor`, `is_active = true`, email verified, `notify_new_drives = true`), remaining daily budget, and estimated 10-minute runs.
+- **Single Dispatch per Drive:** Guarded by unique dedupe key `announcement:drive:{id}:user:{uid}`.
+- **Scheduled Dispatcher (`donorlink:dispatch-announcements`):** Scheduled every 10 minutes, dispatches up to `announcement_chunk` recipients within available budget.
+- **Progress Tracking:** Drive detail page shows real-time counts for queued, sent, failed, and skipped announcements.
+- **Signed Unsubscribe Route:** Served at `/unsubscribe/announcements/{user}` with `signed` middleware:
+  - Works without login.
+  - Rejects tampered URLs with HTTP 403.
+  - Sets `notify_new_drives = false`.
+  - Displays friendly confirmation page (`resources/views/pages/public/unsubscribed.blade.php`).
+  - Supports RFC 8058 one-click unsubscribe via `List-Unsubscribe` and `List-Unsubscribe-Post` headers.
+- **Donor Profile Preference:** Donors can toggle announcements on or off on `/donor/profile` ("Email me when a new drive is announced").
+
+---
+
+### F. Copy & Consent Updates
+- **Registration Consent Checkbox:**
+  > *"I agree to DonorLink UG storing my details so UBTS can manage my appointments and email me appointment confirmations, reminders and announcements of new blood drives. I have read the privacy notice."*
+- **Privacy Notice:** Explicitly documents appointment emails, 24h & 2h reminders, new-drive announcements, and self-service opt-out.
+- **Booking / Reschedule / Cancel Messages:** Inform donors that a confirmation email is on its way to their verified address.
+- **Appointments Header:** Notes that reminders are emailed 24 hours and 2 hours before the appointment.
+- **Zero Medical Advice:** All copy is strictly restricted to logistics (date, time, venue, arrival ID requirements).
+
+---
+
+### G. Admin Notification Audit Log (`/admin/notifications`)
+- Accessible only to administrators (`role:admin` middleware).
+- Paginated table showing user, notification type, status badge, sent time in EAT, created time in EAT, and error descriptions.
+- Filterable by notification type, status, and creation date.
+- **Strictly contains no email bodies, tokens, or links.**
+
+---
+
+## 3. Verification & Acceptance Proofs
+
+### A. Linting & Automated Test Suite (`composer check`)
+Executed `composer check` (`vendor/bin/pint --test` and `php artisan test`):
+```
+{"tool":"pint","result":"passed"}{"tool":"pest","result":"passed","tests":105,"passed":105,"assertions":484,"duration_ms":7563}
+```
+*Result: 0 code style violations; 105 passed tests out of 105 tests (14 Phase 4 tests + 91 existing tests).*
+
+---
+
+### B. Fresh Database Migration & Seeding (`migrate:fresh --seed`)
+```
+ Dropping all tables .. 21.53ms DONE
+
+ INFO Preparing database. 
+
+ Creating migration table .. 20.53ms DONE
+
+ INFO Running migrations. 
+
+ 0001_01_01_000000_create_users_table .. 115.66ms DONE
+ 0001_01_01_000001_create_cache_table .. 80.12ms DONE
+ 0001_01_01_000002_create_jobs_table .. 339.25ms DONE
+ 2024_01_01_000000_create_passkeys_table .. 65.23ms DONE
+ 2025_08_14_170933_add_two_factor_columns_to_users_table .. 67.15ms DONE
+ 2026_10_18_000001_add_phase1_columns_to_users_table .. 58.02ms DONE
+ 2026_10_18_000002_create_donor_profiles_table .. 45.52ms DONE
+ 2026_10_18_000003_create_drives_table .. 69.34ms DONE
+ 2026_10_18_000004_create_slots_table .. 68.88ms DONE
+ 2026_10_18_000005_create_appointments_table .. 71.08ms DONE
+ 2026_10_18_000006_create_notification_logs_table .. 112.01ms DONE
+ 2026_10_18_000007_add_notify_new_drives_to_users_table .. 23.55ms DONE
+
+ INFO Seeding database. 
+
+Seeding development users and donor profiles..
+Seeding Phase 2 demo blood drives and time slots..
+ - Created past closed drive: [DEMO] Sample Past Blood Donation Camp (Closed)
+ - Created published drive with 16 slots: [DEMO] Central Kampala Blood Drive (Sample Schedule)
+ - Created published drive with break window (24 slots, 4 break slots skipped): [DEMO] Makerere Innovation Blood Camp (Sample with Break)
+ - Created draft drive with 0 slots: [DEMO] Kololo Community Drive (Draft - No Slots)
+Seeding Phase 3 demo appointment for donor@donorlink.test..
+ - Created sample booked appointment for Grace Atuhaire (donor@donorlink.test)
+```
+
+---
+
+### C. Booking Local Slot & Queue Worker Delivery
+1. Booked appointment #2 for `donor@donorlink.test` on slot #17 (starts Fri 23 Oct 2026, 09:00 EAT).
+2. Ran queue worker:
+   ```
+   > php artisan queue:work --stop-when-empty
+
+   2026-10-18 16:06:45 App\Listeners\SendAppointmentConfirmedNotification .. RUNNING
+   2026-10-18 16:06:45 App\Listeners\SendAppointmentConfirmedNotification .. 121.74ms DONE
+   2026-10-18 16:06:45 App\Notifications\AppointmentConfirmed .. RUNNING
+   2026-10-18 16:06:46 App\Notifications\AppointmentConfirmed .. 883.62ms DONE
+   2026-10-18 16:06:49 Worker STOPPED Queue empty
+   ```
+3. Email and `.ics` captured in `storage/logs/laravel.log`:
+   ```email
+   From: DonorLink UG <no-reply@<your-domain.ug>>
+   To: donor@donorlink.test
+   Subject: Your blood donation appointment: Fri 23 Oct, 09:00
+   MIME-Version: 1.0
+   Date: Sun, 18 Oct 2026 16:06:46 +0300
+   Message-ID: <d96ab4f3a628a05910378eca2fe35f47@<your-domain.ug>>
+   Content-Type: multipart/mixed; boundary=QzA89UsA
+
+   --QzA89UsA
+   Content-Type: text/calendar; charset=UTF-8; method=PUBLISH; name=donorlink-appointment.ics
+   Content-Transfer-Encoding: base64
+   Content-Disposition: attachment; name=donorlink-appointment.ics; filename=donorlink-appointment.ics
+
+   BEGIN:VCALENDAR
+   VERSION:2.0
+   PRODID:-//Uganda Blood Transfusion Services//DonorLink UG//EN
+   CALSCALE:GREGORIAN
+   METHOD:PUBLISH
+   BEGIN:VEVENT
+   UID:appointment-2@<host>
+   DTSTAMP:20261018T130645Z
+   DTSTART:20261023T060000Z
+   DTEND:20261023T063000Z
+   SUMMARY:Blood donation appointment: [DEMO] Makerere Innovation Blood Camp (
+    Sample with Break)
+   LOCATION:Demo University Hall B\, Demo Campus Avenue\, Makerere\, Kampala
+   DESCRIPTION:Please arrive a few minutes early and bring a valid photo ID (N
+    ational ID\, passport\, driving permit\, or student card). On-site UBTS st
+    aff handle reception and questions.\n\nManage your appointment: http://loc
+    alhost:8000/donor/appointments
+   STATUS:CONFIRMED
+   SEQUENCE:0
+   END:VEVENT
+   END:VCALENDAR
+   --QzA89UsA--
+   ```
+
+---
+
+### D. Scheduled Reminders Sweep Demonstration (`--now`)
+
+**24-Hour Reminder Sweep (1st Run):**
+```
+> php artisan donorlink:send-reminders --now="2026-10-22 10:00"
+
+Running reminder sweep as of 2026-10-22 10:00:00 EAT (2026-10-22 07:00:00 UTC)..
+Dispatched 24h reminder for appointment #2 to donor@donorlink.test.
+Reminders sweep completed: 1 dispatched (24h: 1, 2h: 0), 0 skipped, 0 already processed.
+```
+
+**24-Hour Reminder Sweep (2nd Run - Idempotent):**
+```
+> php artisan donorlink:send-reminders --now="2026-10-22 10:00"
+
+Running reminder sweep as of 2026-10-22 10:00:00 EAT (2026-10-22 07:00:00 UTC)..
+Reminders sweep completed: 0 dispatched (24h: 0, 2h: 0), 0 skipped, 1 already processed.
+```
+
+**2-Hour Reminder Sweep (1st Run):**
+```
+> php artisan donorlink:send-reminders --now="2026-10-23 07:30"
+
+Running reminder sweep as of 2026-10-23 07:30:00 EAT (2026-10-23 04:30:00 UTC)..
+Dispatched 2h reminder for appointment #2 to donor@donorlink.test.
+Reminders sweep completed: 1 dispatched (24h: 0, 2h: 1), 0 skipped, 0 already processed.
+```
+
+**2-Hour Reminder Sweep (2nd Run - Idempotent):**
+```
+> php artisan donorlink:send-reminders --now="2026-10-23 07:30"
+
+Running reminder sweep as of 2026-10-23 07:30:00 EAT (2026-10-23 04:30:00 UTC)..
+Reminders sweep completed: 0 dispatched (24h: 0, 2h: 0), 0 skipped, 1 already processed.
+```
+
+---
+
+### E. Rescheduling Calendar Entry Update (Stable UID, Incremented SEQUENCE)
+Rescheduled appointment #2 to slot #18 (Fri 23 Oct 2026, 09:30 EAT). Processed via `php artisan queue:work --stop-when-empty`:
+```
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Uganda Blood Transfusion Services//DonorLink UG//EN
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+BEGIN:VEVENT
+UID:appointment-2@<host>
+DTSTAMP:20261018T130829Z
+DTSTART:20261023T063000Z
+DTEND:20261023T070000Z
+SUMMARY:Blood donation appointment: [DEMO] Makerere Innovation Blood Camp (
+ Sample with Break)
+LOCATION:Demo University Hall B\, Demo Campus Avenue\, Makerere\, Kampala
+DESCRIPTION:Please arrive a few minutes early and bring a valid photo ID (N
+ ational ID\, passport\, driving permit\, or student card). On-site UBTS st
+ aff handle reception and questions.\n\nManage your appointment: http://loc
+ alhost:8000/donor/appointments
+STATUS:CONFIRMED
+SEQUENCE:1
+END:VEVENT
+END:VCALENDAR
+```
+- **Same UID:** `appointment-2@<host>`.
+- **Updated Times in UTC:** `DTSTART: 20261023T063000Z`, `DTEND: 20261023T070000Z` (09:30 to 10:00 EAT).
+- **Incremented Sequence:** `SEQUENCE: 1` (updates existing calendar entry in Apple Calendar, Google Calendar, and Outlook).
+
+---
+
+### F. Announcement Batch Dispatch Runs (Chunk Size & Budget Protection)
+With seeded donors and chunk size configured to 3:
+
+**Run 1:**
+```
+> php artisan donorlink:dispatch-announcements
+
+Dispatching up to 3 announcements (remaining budget: 148)..
+Dispatched 3 announcement(s) (skipped: 0, failed: 0, remaining budget: 145).
+```
+
+**Run 2:**
+```
+> php artisan donorlink:dispatch-announcements
+
+Dispatching up to 3 announcements (remaining budget: 145)..
+Dispatched 1 announcement(s) (skipped: 0, failed: 0, remaining budget: 144).
+```
+
+**Run 3 (Queue empty):**
+```
+> php artisan donorlink:dispatch-announcements
+
+No queued announcements to dispatch.
+```
+
+---
+
+## 4. Production Launch Checklist (Laravel Cloud)
+
+- [ ] **Sender Domain Records in Brevo:** Configure and verify SPF, DKIM, and DMARC DNS records for `<your-domain.ug>` in Brevo.
+- [ ] **Production `APP_URL`:** Configure `APP_URL=https://<your-domain.ug>` in Laravel Cloud environment variables so all generated signed links (unsubscribe, email verification) use valid HTTPS endpoints.
+- [ ] **Queue Worker (Laravel Cloud):** Enable the **Queue Worker** toggle in the Laravel Cloud application settings.
+- [ ] **Scheduler (Laravel Cloud):** Enable the **Scheduler** toggle in the Laravel Cloud application settings.
+- [ ] **Confirm Brevo Allowance:** Confirm verified plan limits on Brevo's account page and configure `DONORLINK_MAIL_DAILY_BUDGET` below the verified limit.
+- [ ] **Staging Concurrency Check:** Re-run `php artisan donorlink:booking-race-check --capacity=5 --attempts=20` against the production database engine (MySQL/PostgreSQL) on staging.

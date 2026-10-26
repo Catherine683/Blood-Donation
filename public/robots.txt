@@ -1,0 +1,9 @@
+User-agent: *
+Disallow: /donor
+Disallow: /staff
+Disallow: /admin
+Disallow: /unsubscribe
+Disallow: /email
+Disallow: /livewire
+
+Sitemap: /sitemap.xml

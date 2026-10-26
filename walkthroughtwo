@@ -1,0 +1,158 @@
+# DonorLink UG: Phase 2 (Drives, Slots, and Public Drives Pages) Walkthrough
+
+This walkthrough documents the architecture, business rules, query efficiency benchmarks, and verification procedures for **Phase 2: Drives, Slots and the Public Drives Pages** for **Uganda Blood Transfusion Services (UBTS)**.
+
+---
+
+## 1. Architecture & Data Flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Staff as UBTS Staff / Admin
+    actor Guest as Public Guest / Donor
+    participant Web as Web Routes
+    participant DriveSvc as DriveService
+    participant SlotSvc as SlotService
+    participant Gen as SlotGenerator
+    participant DB as SQLite DB (UTC storage)
+    participant UI as Blade Views (EAT display)
+
+    Note over Staff,UI: Staff Creates and Populates Drive
+    Staff->>Web: POST /staff/drives (title, venue, starts_on, ends_on)
+    Web->>DriveSvc: create(data, user) (enforces starts_on >= today in EAT)
+    DriveSvc->>DB: Stores Drive (status='draft')
+    
+    Staff->>Web: POST /staff/drives/{id}/slots/generate (dates, times, break, cap)
+    Web->>Gen: generate(drive, options) (transactional, skips collisions & breaks)
+    Gen->>DB: DB::transaction: bulk inserts Slots (EAT -> UTC conversion)
+    
+    Staff->>Web: POST /staff/drives/{id}/publish
+    Web->>DriveSvc: publish(drive) (requires >= 1 upcoming slot, venue, dates)
+    DriveSvc->>DB: Updates status='published'
+
+    Note over Guest,UI: Public Browses Drives
+    Guest->>Web: GET /drives
+    Web->>DB: Query published & upcoming drives with withSum subqueries (2 queries flat)
+    DB-->>UI: Aggregated spots left (capacity - booked_count)
+    UI-->>Guest: Renders drive cards with "X spots left" / "Fully booked" (Read-Only)
+
+    Guest->>Web: GET /drives/{id}
+    Web->>DB: Fetches drive and upcoming slots (past slots hidden)
+    UI-->>Guest: Displays slots grouped by day in EAT (Read-Only, NO booking controls)
+```
+
+---
+
+## 2. Key Phase 2 Deliverables
+
+### A. Database (Additive Migrations)
+1. **`drives` table** (`database/migrations/2026_10_18_000003_create_drives_table.php`):
+   - `id`, `title`, `description` (nullable text), `venue`, `address` (nullable), `starts_on` (date), `ends_on` (date), `status` (`DriveStatus`: `draft`, `published`, `closed`; default `draft`), `created_by` (foreign key to `users`), timestamps.
+   - Indexes on `status` and `starts_on`.
+2. **`slots` table** (`database/migrations/2026_10_18_000004_create_slots_table.php`):
+   - `id`, `drive_id` (foreign key, cascade on delete), `starts_at` (UTC datetime), `ends_at` (UTC datetime), `capacity` (unsigned integer), `booked_count` (unsigned integer, default 0), timestamps.
+   - Unique on `['drive_id', 'starts_at']`. Index on `starts_at`.
+3. **Models & Enums**:
+   - `App\Enums\DriveStatus`: `Draft = 'draft'`, `Published = 'published'`, `Closed = 'closed'` with badges and labels.
+   - `App\Models\Drive`: `slots()` (`HasMany`), `creator()` (`BelongsTo`), `isPast()`, `isPublished()`, `isClosed()`, `isDraft()`, scopes `published()`, `upcoming()`, `past()`.
+   - `App\Models\Slot`: `drive()` (`BelongsTo`), `Slot::remaining()` accessor (`capacity - booked_count`, never negative), UTC attributes with automatic EAT display formatting.
+   - `DriveFactory` with `draft()`, `published()`, `closed()`, and `past()` states.
+   - `SlotFactory` with custom EAT generator helpers.
+
+### B. Business Services (`App\Services`)
+- **`DriveService`**:
+  - `create`: Enforces `ends_on >= starts_on` and new drives cannot start in the past (EAT).
+  - `update`: Past drives are read-only; shortening date ranges that exclude existing slots is strictly refused.
+  - `publish`: Requires title, venue, valid dates, and at least one upcoming slot (`starts_at >= now()`). Refuses with specific error messages.
+  - `close`: Moves published drives to closed; stops booking; renders closed banner on detail page.
+  - `reopen`: Reopens closed drives that have not ended back to `published`.
+  - `delete`: Draft drives only. Published and closed drives cannot be deleted.
+- **`SlotService`**:
+  - `create`: Validates slot falls within drive dates (EAT), ends after start, capacity between 1 and 100, not in the past, unique start time.
+  - `update`: Locked when `booked_count > 0` for start/end times. Capacity can never be reduced below `booked_count`.
+  - `delete`: Blocked when `booked_count > 0`.
+- **`SlotGenerator`**:
+  - Inputs: drive, dates, start time, end time, slot length (10, 15, 20, 30, 45, 60 min), capacity, optional break window.
+  - Interactive live preview modal with counts of slots to create, break overlaps skipped, collisions skipped, and past slots skipped.
+  - Capped at 200 slots per run.
+  - Atomic execution in a single database transaction (`DB::transaction`).
+
+### C. Date and Timezone Handling (`App\Support\DateHelper`)
+- Application timezone is `Africa/Kampala` (EAT, UTC+3).
+- User and staff inputs are in EAT.
+- Storage in SQLite/database is strictly UTC (`DateHelper::toUtc()`).
+- Display is in EAT (`DateHelper::toEat()`, `DateHelper::formatRange()`, `DateHelper::formatDateRange()`).
+- Round-trip verified: `09:00 EAT` -> stored as `06:00 UTC` -> displayed as `09:00 EAT`.
+
+### D. Staff Screens (`/staff/drives`)
+- **Drives List**: Responsive desktop table and stacked mobile cards (tested down to 360px). Filterable by status (Draft/Published/Closed), timeline (All/Upcoming/Past), and search by title or venue. Real empty state with a "Create a drive" button.
+- **Create & Edit Forms**: Clean validation, date constraints, and draft default.
+- **Drive Detail (`/staff/drives/{drive}`)**:
+  - Header with status badges and available actions (Publish, Close, Reopen, Edit, Delete with confirmation modals and disabled tooltips).
+  - Slots section grouped by day in EAT with time range, capacity, booked, remaining.
+  - Inline add single slot modal, edit slot modal, delete slot modal.
+  - Interactive slot generator modal with live preview.
+
+### E. Public Drives Pages (`/drives`, `/drives/{drive}`)
+- **`/drives`**:
+  - Lists published, upcoming drives, soonest first.
+  - Aggregated availability: "X spots left", "Fully booked", or "No slots available".
+  - Empty state: *"There are no drives scheduled right now. Please check back soon."*
+- **`/drives/{drive}`**:
+  - Venue, address, dates, description, and slot list grouped by day with remaining spots. Past slots hidden.
+  - **Strictly read-only**: Zero booking buttons, forms, links, or appointment references.
+  - Draft drives return 404 to guests/donors, but display a preview banner with link back to staff detail page for staff/admin.
+  - Closed drives display the *"This drive is closed"* banner.
+- **Navigation & Donor Home**:
+  - Header & footer link to "Upcoming drives".
+  - Donor home (`/donor`) features an "Upcoming Blood Drives" card grid showing up to 3 published drives.
+
+---
+
+## 3. Query Count & N+1 Performance Report
+
+The query efficiency for `/drives` was measured with **20 seeded drives** with slots:
+- **Total SQL Queries Executed:** **2 queries** (1 pagination count query + 1 select query with subqueries for capacity, booked count, and slot count).
+- **N+1 Prevention:** Completely avoided by computing `upcoming_capacity`, `upcoming_booked`, and `upcoming_slots_count` using Eloquent's `withSum` and `withCount` subqueries directly on the parent query.
+
+---
+
+## 4. Verification & Testing Evidence
+
+### 1. `composer check` Output
+```text
+{"tool":"pint","result":"passed"}
+{"tool":"pest","result":"passed","tests":72,"passed":72,"assertions":272,"duration_ms":42918}
+```
+
+### 2. `php artisan migrate:fresh --seed` Output
+```text
+Dropping all tables .. 23.32ms DONE
+
+ INFO Preparing database. 
+
+ Creating migration table .. 29.27ms DONE
+
+ INFO Running migrations. 
+
+ 0001_01_01_000000_create_users_table .. 144.00ms DONE
+ 0001_01_01_000001_create_cache_table .. 98.58ms DONE
+ 0001_01_01_000002_create_jobs_table .. 348.32ms DONE
+ 2024_01_01_000000_create_passkeys_table .. 137.58ms DONE
+ 2025_08_14_170933_add_two_factor_columns_to_users_table .. 73.03ms DONE
+ 2026_10_18_000001_add_phase1_columns_to_users_table .. 44.10ms DONE
+ 2026_10_18_000002_create_donor_profiles_table .. 69.19ms DONE
+ 2026_10_18_000003_create_drives_table .. 73.02ms DONE
+ 2026_10_18_000004_create_slots_table .. 226.15ms DONE
+
+
+ INFO Seeding database. 
+
+Seeding development users and donor profiles..
+Seeding Phase 2 demo blood drives and time slots..
+ - Created past closed drive: [DEMO] Sample Past Blood Donation Camp (Closed)
+ - Created published drive with 16 slots: [DEMO] Central Kampala Blood Drive (Sample Schedule)
+ - Created published drive with break window (24 slots, 4 break slots skipped): [DEMO] Makerere Innovation Blood Camp (Sample with Break)
+ - Created draft drive with 0 slots: [DEMO] Kololo Community Drive (Draft - No Slots)
+```
