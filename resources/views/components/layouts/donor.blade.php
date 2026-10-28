@@ -30,6 +30,9 @@
                     <a href="{{ route('donor.home') }}" class="px-3.5 py-2 rounded-lg text-sm font-medium transition-colors {{ request()->routeIs('donor.home') ? 'bg-primary-50 text-primary-700 font-semibold' : 'text-neutral-700 hover:text-neutral-900 hover:bg-neutral-100' }}">
                         Home
                     </a>
+                    <a href="{{ route('drives.index') }}" class="px-3.5 py-2 rounded-lg text-sm font-medium transition-colors {{ request()->routeIs('drives.*') ? 'bg-primary-50 text-primary-700 font-semibold' : 'text-neutral-700 hover:text-neutral-900 hover:bg-neutral-100' }}">
+                        Find Drives
+                    </a>
                     <a href="{{ route('donor.appointments') }}" class="px-3.5 py-2 rounded-lg text-sm font-medium transition-colors {{ request()->routeIs('donor.appointments') ? 'bg-primary-50 text-primary-700 font-semibold' : 'text-neutral-700 hover:text-neutral-900 hover:bg-neutral-100' }}">
                         Appointments
                     </a>
