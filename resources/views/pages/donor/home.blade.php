@@ -218,10 +218,10 @@
         </div>
 
         {{-- Main 2-Column Clinical Dashboard Layout --}}
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        <div class="flex flex-col lg:flex-row items-start gap-8 w-full">
             
-            {{-- Left Column (8 cols): Drives & History --}}
-            <div class="lg:col-span-8 space-y-8">
+            {{-- Left Column: Drives & History --}}
+            <div class="flex-1 min-w-0 w-full space-y-8">
                 
                 {{-- Section 1: Upcoming Blood Donation Drives --}}
                 <div class="bg-white rounded-2xl border border-neutral-200/90 shadow-xs overflow-hidden">
@@ -359,8 +359,8 @@
 
             </div>
 
-            {{-- Right Column (4 cols): Official Card & Clinical Checklist --}}
-            <div class="lg:col-span-4 space-y-6">
+            {{-- Right Column: Official Card & Clinical Checklist --}}
+            <div class="w-full lg:w-[380px] shrink-0 space-y-6">
                 
                 {{-- UBTS Official Digital Donor Credential Card --}}
                 <div class="rounded-2xl border border-primary-200/80 shadow-sm p-6 relative overflow-hidden bg-gradient-to-br from-neutral-900 via-neutral-900 to-neutral-950 text-white">

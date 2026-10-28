@@ -94,9 +94,9 @@
             </div>
         @endif
 
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            {{-- Left Column (8 cols): Profile Forms --}}
-            <div class="lg:col-span-8 space-y-8">
+        <div class="flex flex-col lg:flex-row items-start gap-8 w-full">
+            {{-- Left Column: Profile Forms --}}
+            <div class="flex-1 min-w-0 w-full space-y-8">
                 {{-- Form 1: Contact Details --}}
                 <div class="bg-white rounded-2xl border border-neutral-200/90 shadow-xs p-6 sm:p-7 space-y-6">
                     <div class="border-b border-neutral-100 pb-4">
@@ -359,8 +359,8 @@
                 </div>
             </div>
 
-            {{-- Right Column (4 cols): Credential Card & Regulatory --}}
-            <div class="lg:col-span-4 space-y-6">
+            {{-- Right Column: Credential Card & Regulatory --}}
+            <div class="w-full lg:w-[380px] shrink-0 space-y-6">
                 {{-- Digital UBTS Voluntary Donor Card --}}
                 <div class="rounded-2xl bg-gradient-to-br from-neutral-900 via-neutral-950 to-primary-950 text-white p-6 shadow-md relative overflow-hidden border border-neutral-800">
                     {{-- Decorative Watermark --}}
