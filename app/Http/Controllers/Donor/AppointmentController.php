@@ -90,8 +90,24 @@ class AppointmentController extends Controller
     /**
      * Cancel an existing appointment.
      */
-    public function destroy(Request $request, Appointment $appointment): RedirectResponse
+    public function destroy(Request $request, ?Appointment $appointment = null): RedirectResponse
     {
+        if (! $appointment || ! $appointment->exists) {
+            $appointmentId = $request->integer('appointment_id') ?: $request->route('appointment');
+
+            if (! $appointmentId) {
+                return redirect()->route('donor.appointments')
+                    ->with('error', 'No appointment was selected for cancellation.');
+            }
+
+            $appointment = Appointment::find($appointmentId);
+
+            if (! $appointment) {
+                return redirect()->route('donor.appointments')
+                    ->with('error', 'The requested appointment could not be found or has already been cancelled.');
+            }
+        }
+
         Gate::authorize('cancel', $appointment);
 
         try {

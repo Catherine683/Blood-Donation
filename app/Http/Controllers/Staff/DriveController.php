@@ -349,7 +349,7 @@ class DriveController extends Controller
         try {
             $this->driveService->delete($drive);
 
-            return redirect()->route('staff.drives.index')
+            return redirect()->route('staff.drives')
                 ->with('status', 'Draft drive deleted.');
         } catch (ValidationException $e) {
             return back()->withErrors($e->errors());

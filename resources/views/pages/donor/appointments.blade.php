@@ -222,9 +222,10 @@
                     Your reserved place will be released immediately. You can book another session at any time.
                 </p>
 
-                <form method="POST" :action="'/donor/appointments/' + cancelData.id">
+                <form method="POST" :action="'/donor/appointments/' + (cancelData.id || '')">
                     @csrf
                     @method('DELETE')
+                    <input type="hidden" name="appointment_id" :value="cancelData.id">
 
                     <div class="pt-4 border-t border-neutral-100 flex items-center justify-end gap-2.5">
                         <x-button type="button" variant="secondary" size="sm" x-on:click="$dispatch('close-modal', 'cancel-appointment-modal')">

@@ -8,6 +8,7 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     
     <title>{{ filled($title ?? null) ? $title . ' — DonorLink UG' : 'Donor Portal — DonorLink UG' }}</title>
+    <style>[x-cloak] { display: none !important; }</style>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body class="min-h-full flex flex-col font-sans antialiased bg-neutral-50 text-neutral-900 pb-20 md:pb-8">
@@ -160,6 +161,7 @@
         </div>
     </nav>
 
+    @fluxScripts
     @stack('scripts')
 </body>
 </html>

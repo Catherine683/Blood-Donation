@@ -26,6 +26,7 @@
     x-on:keydown.escape.window="show = false; collapsed = false"
     x-show="show"
     x-cloak
+    style="display: none;"
     class="relative z-50"
     role="dialog"
     aria-modal="true"

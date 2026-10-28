@@ -9,7 +9,7 @@
     
     <title>{{ filled($title ?? null) ? $title . ' — ' . config('app.name', 'DonorLink UG') : config('app.name', 'DonorLink UG') . ' — Blood Donation Appointments in Uganda' }}</title>
     <meta name="description" content="Book your blood donation appointment with Uganda Blood Transfusion Services (UBTS) across Kampala and regional blood banks.">
-
+    <style>[x-cloak] { display: none !important; }</style>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body class="min-h-full flex flex-col font-sans antialiased bg-neutral-50 text-neutral-900">
@@ -83,6 +83,7 @@
         </div>
     </footer>
 
+    @fluxScripts
     @stack('scripts')
 </body>
 </html>

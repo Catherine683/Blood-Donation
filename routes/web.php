@@ -85,7 +85,7 @@ Route::middleware(['auth', 'verified', 'role:donor'])
         Route::get('/', DonorHomeController::class)->name('home');
         Route::get('/appointments', [AppointmentController::class, 'index'])->name('appointments');
         Route::post('/appointments', [AppointmentController::class, 'store'])->middleware('throttle:15,1')->name('appointments.store');
-        Route::delete('/appointments/{appointment}', [AppointmentController::class, 'destroy'])->middleware('throttle:15,1')->name('appointments.destroy');
+        Route::delete('/appointments/{appointment?}', [AppointmentController::class, 'destroy'])->middleware('throttle:15,1')->name('appointments.destroy');
         Route::put('/appointments/{appointment}/reschedule', [AppointmentController::class, 'reschedule'])->middleware('throttle:15,1')->name('appointments.reschedule');
         Route::get('/history', HistoryController::class)->name('history');
         Route::get('/profile', [ProfileController::class, 'show'])->name('profile');
