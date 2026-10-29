@@ -36,10 +36,11 @@ DonorLink UG is a voluntary blood donation appointment scheduling, capacity mana
    ```bash
    php artisan migrate --seed
    ```
-   *Note: Seeders create local demo accounts with password `password`:*
+   *Note: The development seeder creates local administrator and staff accounts with password `password`:*
    - Administrator: `admin@donorlink.test`
    - Staff: `staff@donorlink.test`
-   - Donor: `donor@donorlink.test`
+
+   Running `php artisan db:seed` removes legacy `[DEMO]` drives and their demo-only donor accounts. It does not create sample drives or donor accounts.
 
 5. **Build or run frontend assets:**
    ```bash
@@ -196,3 +197,5 @@ Run test suite against a dedicated MySQL database:
 ```bash
 php artisan test --configuration=phpunit.mysql.xml
 ```
+#   D o n o r l i n k  
+ 
