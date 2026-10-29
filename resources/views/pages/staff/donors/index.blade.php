@@ -84,6 +84,7 @@
                         <thead class="bg-neutral-50/80 text-[11px] font-semibold uppercase tracking-wider text-neutral-500">
                             <tr>
                                 <th class="px-4 py-3">Donor Name</th>
+                                <th class="px-4 py-3">Blood Group</th>
                                 <th class="px-4 py-3">Phone</th>
                                 <th class="px-4 py-3">Email Status</th>
                                 <th class="px-4 py-3">Last Donated</th>
@@ -97,6 +98,15 @@
                                         <a href="{{ route('staff.donors.show', $donor) }}" class="hover:text-primary-700 underline-offset-2 hover:underline">
                                             {{ $donor->name }}
                                         </a>
+                                    </td>
+                                    <td class="px-4 py-3">
+                                        @if ($donor->donorProfile?->blood_group)
+                                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-primary-50 text-primary-800 border border-primary-200/60 font-mono">
+                                                {{ $donor->donorProfile->blood_group->label() }}
+                                            </span>
+                                        @else
+                                            <span class="text-neutral-400 text-xs">Pending typing</span>
+                                        @endif
                                     </td>
                                     <td class="px-4 py-3 font-mono text-neutral-600">
                                         {{ $donor->phone ?? '—' }}

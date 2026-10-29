@@ -24,6 +24,7 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     
     <title>{{ filled($title ?? null) ? $title . ' — DonorLink UG' : 'DonorLink UG' }}</title>
+    <style>[x-cloak] { display: none !important; }</style>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body class="min-h-screen bg-neutral-50 font-sans antialiased text-neutral-900 flex flex-col justify-center py-4 sm:py-6 px-4 sm:px-6 lg:px-8 relative overflow-x-hidden">

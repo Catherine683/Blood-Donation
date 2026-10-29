@@ -8,6 +8,7 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     
     <title>{{ filled($title ?? null) ? $title . ' — Staff Portal — DonorLink UG' : 'Staff Portal — DonorLink UG' }}</title>
+    <style>[x-cloak] { display: none !important; }</style>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body class="h-full font-sans antialiased bg-neutral-100 text-neutral-900 flex overflow-hidden" x-data="{ sidebarOpen: false, collapsed: false }">

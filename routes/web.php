@@ -34,7 +34,17 @@ use Laravel\Fortify\Http\Controllers\RegisteredUserController;
 | Public Routes
 |--------------------------------------------------------------------------
 */
-Route::view('/', 'welcome')->name('home');
+Route::get('/', function () {
+    $todayEat = \App\Support\DateHelper::today()->toDateString();
+    $upcomingDrives = \App\Models\Drive::query()
+        ->where('status', \App\Enums\DriveStatus::Published->value)
+        ->where('ends_on', '>=', $todayEat)
+        ->orderBy('starts_on')
+        ->take(3)
+        ->get();
+
+    return view('welcome', compact('upcomingDrives'));
+})->name('home');
 Route::view('/privacy', 'pages.privacy')->name('privacy');
 Route::get('/robots.txt', RobotsController::class)->name('robots');
 Route::get('/sitemap.xml', SitemapController::class)->name('sitemap');

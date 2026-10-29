@@ -136,6 +136,83 @@
         </div>
     </section>
 
+    @if(isset($upcomingDrives) && $upcomingDrives->isNotEmpty())
+        {{-- Live Upcoming Blood Drives Preview --}}
+        <section class="py-12 sm:py-16 bg-white border-b border-neutral-200/80">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
+                    <div>
+                        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-primary-50 text-primary-700 border border-primary-200/60 mb-2">
+                            <span class="w-1.5 h-1.5 rounded-full bg-primary-600 animate-pulse"></span>
+                            Live Schedules Across Uganda
+                        </span>
+                        <h2 class="text-2xl sm:text-3xl font-extrabold tracking-tight text-neutral-900 font-sans">
+                            Upcoming Blood Donation Camps
+                        </h2>
+                        <p class="text-sm text-neutral-500 mt-1">
+                            Choose a convenient collection point and reserve your voluntary donation slot online.
+                        </p>
+                    </div>
+
+                    <a
+                        href="{{ route('drives.index') }}"
+                        class="inline-flex items-center text-xs font-bold text-primary-700 hover:text-primary-900 hover:underline gap-1 self-start sm:self-auto shrink-0"
+                    >
+                        <span>View all upcoming drives</span>
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                        </svg>
+                    </a>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    @foreach($upcomingDrives as $drive)
+                        <div class="group bg-white rounded-2xl border border-neutral-200/90 shadow-xs hover:shadow-md hover:border-neutral-300 transition-all duration-200 flex flex-col justify-between overflow-hidden relative">
+                            <div class="h-1 bg-gradient-to-r from-primary-700 via-primary-600 to-rose-400"></div>
+                            <div class="p-6 space-y-4 flex-1 flex flex-col justify-between">
+                                <div class="space-y-2.5">
+                                    <div class="flex items-center justify-between text-xs">
+                                        <span class="font-bold text-primary-800 bg-primary-50 px-2.5 py-1 rounded-md border border-primary-100 flex items-center gap-1.5">
+                                            <svg class="w-3.5 h-3.5 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                            </svg>
+                                            {{ \App\Support\DateHelper::formatDateRange($drive->starts_on, $drive->ends_on) }}
+                                        </span>
+                                    </div>
+                                    <h3 class="text-base font-bold text-neutral-900 group-hover:text-primary-700 transition-colors line-clamp-1">
+                                        <a href="{{ route('drives.show', $drive) }}">
+                                            {{ $drive->title }}
+                                        </a>
+                                    </h3>
+                                    <p class="text-xs text-neutral-600 flex items-start gap-1.5 font-medium line-clamp-1">
+                                        <svg class="w-4 h-4 text-neutral-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                        </svg>
+                                        <span>{{ $drive->venue }}@if($drive->address) &bull; {{ $drive->address }}@endif</span>
+                                    </p>
+                                </div>
+
+                                <div class="pt-4 border-t border-neutral-100 flex items-center justify-between">
+                                    <span class="text-xs text-neutral-500">UBTS Certified</span>
+                                    <a
+                                        href="{{ route('drives.show', $drive) }}"
+                                        class="inline-flex items-center gap-1 text-xs font-bold text-primary-700 hover:text-primary-900 group-hover:translate-x-0.5 transition-transform"
+                                    >
+                                        <span>Book Slot</span>
+                                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                                        </svg>
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+            </div>
+        </section>
+    @endif
+
     {{-- Visual Impact Cards Section --}}
     <section class="py-14 sm:py-20 bg-neutral-50/80 border-b border-neutral-200/80">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

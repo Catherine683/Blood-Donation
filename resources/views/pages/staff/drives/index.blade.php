@@ -170,6 +170,17 @@
                                 <td class="whitespace-nowrap py-3.5 pl-3 pr-6 text-right text-xs font-medium">
                                     <div class="flex items-center justify-end gap-1.5">
                                         <a
+                                            href="{{ route('staff.drives.roster', $drive) }}"
+                                            class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-emerald-800 bg-emerald-50 hover:bg-emerald-100 font-bold transition-colors border border-emerald-200"
+                                            title="Open live attendance roster"
+                                        >
+                                            <svg class="w-3.5 h-3.5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                                            </svg>
+                                            Roster
+                                        </a>
+
+                                        <a
                                             href="{{ route('staff.drives.show', $drive) }}"
                                             class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-neutral-700 hover:text-neutral-900 hover:bg-neutral-100 font-semibold transition-colors"
                                             title="View drive overview & slots"
@@ -262,6 +273,12 @@
                         </div>
 
                         <div class="pt-1 flex items-center gap-2">
+                            <a
+                                href="{{ route('staff.drives.roster', $drive) }}"
+                                class="flex-1 inline-flex items-center justify-center py-2 px-3 text-xs font-bold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors shadow-2xs"
+                            >
+                                Live Roster
+                            </a>
                             <x-button :href="route('staff.drives.show', $drive)" variant="secondary" size="sm" class="flex-1 justify-center">
                                 View
                             </x-button>

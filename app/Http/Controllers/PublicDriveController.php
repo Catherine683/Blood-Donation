@@ -21,31 +21,51 @@ class PublicDriveController extends Controller
     {
         $todayEat = DateHelper::today()->toDateString();
         $nowUtc = Carbon::now('UTC')->toDateTimeString();
+        $search = $request->string('q')->trim()->toString();
+        $filter = $request->string('filter', 'all')->trim()->toString();
 
         // Optimized query: fetches published upcoming drives with aggregated slot availability in subqueries (0 N+1)
-        $drives = Drive::query()
+        $query = Drive::query()
             ->where('status', DriveStatus::Published->value)
             ->where('ends_on', '>=', $todayEat)
             ->withSum([
-                'slots as upcoming_capacity' => function ($query) use ($nowUtc) {
-                    $query->where('starts_at', '>=', $nowUtc);
+                'slots as upcoming_capacity' => function ($q) use ($nowUtc) {
+                    $q->where('starts_at', '>=', $nowUtc);
                 },
             ], 'capacity')
             ->withSum([
-                'slots as upcoming_booked' => function ($query) use ($nowUtc) {
-                    $query->where('starts_at', '>=', $nowUtc);
+                'slots as upcoming_booked' => function ($q) use ($nowUtc) {
+                    $q->where('starts_at', '>=', $nowUtc);
                 },
             ], 'booked_count')
             ->withCount([
-                'slots as upcoming_slots_count' => function ($query) use ($nowUtc) {
-                    $query->where('starts_at', '>=', $nowUtc);
+                'slots as upcoming_slots_count' => function ($q) use ($nowUtc) {
+                    $q->where('starts_at', '>=', $nowUtc);
                 },
-            ])
-            ->orderBy('starts_on')
-            ->orderBy('id')
-            ->paginate(9);
+            ]);
 
-        return view('pages.public.drives.index', compact('drives'));
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('title', 'like', "%{$search}%")
+                    ->orWhere('venue', 'like', "%{$search}%")
+                    ->orWhere('address', 'like', "%{$search}%")
+                    ->orWhere('description', 'like', "%{$search}%");
+            });
+        }
+
+        if ($filter === 'available') {
+            $query->whereHas('slots', function ($q) use ($nowUtc) {
+                $q->where('starts_at', '>=', $nowUtc)
+                    ->whereColumn('booked_count', '<', 'capacity');
+            });
+        }
+
+        $drives = $query->orderBy('starts_on')
+            ->orderBy('id')
+            ->paginate(9)
+            ->withQueryString();
+
+        return view('pages.public.drives.index', compact('drives', 'search', 'filter'));
     }
 
     /**
