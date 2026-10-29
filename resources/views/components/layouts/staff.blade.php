@@ -45,7 +45,7 @@
     >
         {{-- Sidebar Brand Header --}}
         <div class="h-16 px-4 flex items-center justify-between border-b border-neutral-200">
-            <a href="{{ route('staff.dashboard') }}" class="flex items-center gap-2 overflow-hidden focus-visible:rounded-lg">
+            <a href="{{ route('home') }}" class="flex items-center gap-2 overflow-hidden focus-visible:rounded-lg" aria-label="DonorLink UG Home">
                 <x-logo size="sm" ::icon-only="collapsed" />
             </a>
             {{-- Mobile Close Button --}}
@@ -216,9 +216,9 @@
                 </button>
 
                 {{-- Mobile Logo --}}
-                <div class="lg:hidden">
+                <a href="{{ route('home') }}" class="lg:hidden focus-visible:rounded-lg" aria-label="DonorLink UG Home">
                     <x-logo size="sm" />
-                </div>
+                </a>
 
                 {{-- Desktop Portal Context Tag --}}
                 <div class="hidden lg:flex items-center gap-2.5 text-xs text-neutral-500">

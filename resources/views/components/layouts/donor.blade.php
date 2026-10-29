@@ -21,7 +21,7 @@
     <header class="sticky top-0 z-30 bg-white border-b border-neutral-200/80">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
             <div class="flex items-center gap-8">
-                <a href="{{ route('donor.home') }}" class="focus-visible:rounded-lg" aria-label="DonorLink UG Portal">
+                <a href="{{ route('home') }}" class="focus-visible:rounded-lg" aria-label="DonorLink UG Home">
                     <x-logo size="md" />
                 </a>
 
