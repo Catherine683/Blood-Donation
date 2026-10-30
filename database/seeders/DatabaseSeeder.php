@@ -74,7 +74,7 @@ class DatabaseSeeder extends Seeder
             ['email' => 'admin@donorlink.test'],
             [
                 'name' => 'UBTS Administrator',
-                'phone' => '+256756788112',
+                'phone' => '+2567992303990',
                 'role' => Role::Admin,
                 'is_active' => true,
                 'email_verified_at' => now(),
