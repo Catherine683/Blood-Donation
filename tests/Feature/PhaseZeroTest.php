@@ -9,7 +9,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
-test('registration creates an active donor who is redirected to verification notice and cannot reach /donor until verified', function () {
+test('registration creates an unverified donor and redirects to OTP verification', function () {
     $response = $this->post(route('register.store'), [
         'name' => 'Sarah Akello',
         'email' => 'sarah@example.ug',
@@ -20,17 +20,16 @@ test('registration creates an active donor who is redirected to verification not
     ]);
 
     $response->assertSessionHasNoErrors();
-    $response->assertRedirect(route('verification.notice'));
+    $response->assertRedirect(route('register.otp', ['email' => 'sarah@example.ug']));
 
     $user = User::query()->where('email', 'sarah@example.ug')->first();
     expect($user)->not->toBeNull();
     expect($user->role)->toBe(Role::Donor);
     expect($user->isDonor())->toBeTrue();
-    expect($user->is_active)->toBeTrue();
+    expect($user->is_active)->toBeFalse();
     expect($user->hasVerifiedEmail())->toBeFalse();
 
-    // Verify unverified donor is blocked from /donor
-    $this->get('/donor')->assertRedirect(route('verification.notice'));
+    $this->get('/donor')->assertRedirect(route('login'));
 });
 
 test('unverified users are redirected to the verification notice when accessing /donor', function () {

@@ -73,8 +73,8 @@ class PhaseEightTest extends TestCase
         $this->assertEquals(Role::Donor, $user->role);
         // Pending email cannot be mass-assigned
         $this->assertNull($user->pending_email);
-        // Is active defaults to true
-        $this->assertTrue($user->is_active);
+        // A self-registered donor stays inactive until their email OTP is verified.
+        $this->assertFalse($user->is_active);
     }
 
     public function test_mass_assignment_tampering_on_profile_update_is_prevented(): void
@@ -351,7 +351,7 @@ class PhaseEightTest extends TestCase
 
     public function test_password_reset_response_is_neutral_to_prevent_user_enumeration(): void
     {
-        $neutralMessage = 'If an account exists with this email address, we have sent a password reset link.';
+        $neutralMessage = 'If an account exists with this email address, we have sent a six-digit verification code.';
 
         // 1. Existing user
         $user = User::factory()->create(['email' => 'exists@example.com']);

@@ -23,6 +23,8 @@ class RegisterDonor
      */
     public function register(array $input): User
     {
+        $input['email'] = strtolower(trim((string) ($input['email'] ?? '')));
+
         Validator::make($input, [
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
@@ -44,7 +46,7 @@ class RegisterDonor
                 'phone' => PhoneNumber::normalise((string) $input['phone']),
                 'date_of_birth' => ! empty($input['date_of_birth']) ? $input['date_of_birth'] : null,
                 'role' => Role::Donor,
-                'is_active' => true,
+                'is_active' => false,
                 'consent_given_at' => now(),
                 'password' => Hash::make((string) $input['password']),
             ]);

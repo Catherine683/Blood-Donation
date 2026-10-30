@@ -44,7 +44,7 @@ class FortifyServiceProvider extends ServiceProvider
             {
                 public function toResponse($request)
                 {
-                    return back()->with('status', 'If an account exists with this email address, we have sent a password reset link.');
+                    return back()->with('status', 'If an account exists with this email address, we have sent a six-digit verification code.');
                 }
             };
         });
@@ -54,7 +54,7 @@ class FortifyServiceProvider extends ServiceProvider
             {
                 public function toResponse($request)
                 {
-                    return back()->with('status', 'If an account exists with this email address, we have sent a password reset link.');
+                    return back()->with('status', 'If an account exists with this email address, we have sent a six-digit verification code.');
                 }
             };
         });
@@ -115,8 +115,12 @@ class FortifyServiceProvider extends ServiceProvider
 
             if ($user && Hash::check((string) $request->input('password'), $user->password)) {
                 if (! $user->is_active) {
+                    $message = $user->hasVerifiedEmail()
+                        ? __('This account is inactive. Please contact UBTS staff.')
+                        : __('This account is not activated. Follow the verification instructions sent to your email.');
+
                     throw ValidationException::withMessages([
-                        Fortify::username() => [__('This account is inactive. Please contact UBTS staff.')],
+                        Fortify::username() => [$message],
                     ]);
                 }
 
@@ -161,6 +165,18 @@ class FortifyServiceProvider extends ServiceProvider
             return Limit::perHour(30)->by($request->ip());
         });
 
+        RateLimiter::for('registration-otp-verify', function (Request $request) {
+            $email = Str::lower((string) $request->input('email', ''));
+
+            return Limit::perMinute(10)->by(Str::transliterate($email.'|'.$request->ip()));
+        });
+
+        RateLimiter::for('registration-otp-resend', function (Request $request) {
+            $email = Str::lower((string) $request->input('email', ''));
+
+            return Limit::perMinutes(5, 3)->by(Str::transliterate($email.'|'.$request->ip()));
+        });
+
         // Forgot-password rate limit: keyed on email + IP combination (3 attempts per minute).
         // Keying by email+IP prevents distributed denial-of-service/lockout against a single user's inbox from multiple IPs,
         // while stopping an individual IP from spraying password reset requests across arbitrary recipient emails.
@@ -168,7 +184,16 @@ class FortifyServiceProvider extends ServiceProvider
             $email = Str::lower((string) $request->input('email', ''));
             $throttleKey = Str::transliterate($email.'|'.$request->ip());
 
-            return Limit::perMinute(3)->by($throttleKey);
+            return [
+                Limit::perMinute(3)->by($throttleKey),
+                Limit::perMinutes(5, 3)->by(Str::lower($email)),
+            ];
+        });
+
+        RateLimiter::for('password-otp-verify', function (Request $request) {
+            $email = Str::lower((string) $request->input('email', ''));
+
+            return Limit::perMinute(10)->by(Str::transliterate($email.'|'.$request->ip()));
         });
 
         RateLimiter::for('verification-resend', function (Request $request) {

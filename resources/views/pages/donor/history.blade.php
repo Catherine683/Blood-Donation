@@ -16,7 +16,7 @@
                         </span>
                         @if ($donorProfile?->blood_group)
                             <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-primary-600 text-white shadow-2xs font-mono">
-                                Blood Group: {{ $donorProfile->blood_group->label() }}
+                                Blood Group: {{ $donorProfile->blood_group }}
                             </span>
                         @endif
                     </div>

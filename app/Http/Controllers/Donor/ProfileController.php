@@ -54,14 +54,15 @@ class ProfileController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'phone' => ['required', 'string', new UgandanPhoneNumber],
             'date_of_birth' => ['nullable', 'date', 'after_or_equal:1900-01-01', 'before_or_equal:today'],
+            'notify_new_drives' => ['sometimes', 'boolean'],
         ]);
 
         $user->name = trim($validated['name']);
         $user->phone = PhoneNumber::normalise($validated['phone']);
         $user->date_of_birth = ! empty($validated['date_of_birth']) ? $validated['date_of_birth'] : null;
 
-        if ($request->has('notify_new_drives')) {
-            $user->notify_new_drives = $request->boolean('notify_new_drives');
+        if (array_key_exists('notify_new_drives', $validated)) {
+            $user->notify_new_drives = (bool) $validated['notify_new_drives'];
         }
 
         $user->save();
@@ -256,7 +257,7 @@ class ProfileController extends Controller
                 'announcement_preference' => $donor->notify_new_drives ? 'opted_in' : 'opted_out',
             ],
             'blood_profile' => [
-                'blood_group' => $profile?->blood_group?->label(),
+                'blood_group' => $profile?->blood_group,
                 'last_donated_on' => $profile?->last_donated_on?->format('Y-m-d'),
             ],
             'appointments' => $appointments,

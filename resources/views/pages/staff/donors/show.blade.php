@@ -17,7 +17,15 @@
                         <p class="text-xs text-neutral-500">{{ $donor->email }} &bull; {{ $donor->phone ?? 'No phone' }}</p>
                     </div>
                 </div>
-                <div>
+                <div class="flex flex-col sm:flex-row gap-2">
+                    @unless ($donor->hasVerifiedEmail())
+                        <form method="POST" action="{{ route('staff.donors.activation-email', $donor) }}">
+                            @csrf
+                            <x-button type="submit" variant="secondary" size="md" class="min-h-[44px]">
+                                Resend Activation Link
+                            </x-button>
+                        </form>
+                    @endunless
                     <x-button :href="route('staff.donors')" variant="secondary" size="md" class="min-h-[44px]">
                         &larr; Back to Directory
                     </x-button>

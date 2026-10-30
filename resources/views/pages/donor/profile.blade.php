@@ -264,10 +264,9 @@
 
                         <div>
                             <x-label for="current_password_email" value="Current Account Password" required />
-                            <x-input
+                            <x-password-input
                                 id="current_password_email"
                                 name="current_password"
-                                type="password"
                                 required
                                 autocomplete="current-password"
                                 placeholder="••••••••••••"
@@ -307,10 +306,9 @@
 
                         <div>
                             <x-label for="current_password" value="Current Password" required />
-                            <x-input
+                            <x-password-input
                                 id="current_password"
                                 name="current_password"
-                                type="password"
                                 required
                                 autocomplete="current-password"
                                 placeholder="••••••••••••"
@@ -322,10 +320,9 @@
 
                         <div>
                             <x-label for="password" value="New Password" required />
-                            <x-input
+                            <x-password-input
                                 id="password"
                                 name="password"
-                                type="password"
                                 required
                                 autocomplete="new-password"
                                 placeholder="••••••••••••"
@@ -337,10 +334,9 @@
 
                         <div>
                             <x-label for="password_confirmation" value="Confirm New Password" required />
-                            <x-input
+                            <x-password-input
                                 id="password_confirmation"
                                 name="password_confirmation"
-                                type="password"
                                 required
                                 autocomplete="new-password"
                                 placeholder="••••••••••••"
@@ -394,7 +390,7 @@
                             <div>
                                 <span class="text-[10px] text-neutral-400 block uppercase font-medium">Blood Group</span>
                                 <span class="text-lg font-black text-rose-400 block">
-                                    {{ $donorProfile?->blood_group?->label() ?? 'Pending' }}
+                                    {{ $donorProfile?->blood_group ?? 'Pending' }}
                                 </span>
                             </div>
                             <div>

@@ -10,11 +10,15 @@ use App\Http\Controllers\Controller;
 use App\Models\DonationRecord;
 use App\Models\DonorProfile;
 use App\Models\User;
+use App\Notifications\DonorActivationLink;
 use App\Services\AuditLogger;
 use App\Services\DonationRecorder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
@@ -86,28 +90,23 @@ class DonorController extends Controller
             'date_of_birth' => ['nullable', 'date', 'after_or_equal:1900-01-01', 'before_or_equal:today'],
             'blood_group' => ['nullable', 'string', Rule::in(self::VALID_BLOOD_GROUPS)],
             'notes_for_staff' => ['nullable', 'string', 'max:500'],
-            'password' => ['nullable', 'string', 'min:8'],
         ], [
             'phone' => \App\Support\PhoneNumber::errorMessage(),
             'date_of_birth.after_or_equal' => 'Please enter a valid date of birth on or after 1900.',
             'date_of_birth.before_or_equal' => 'Date of birth cannot be in the future.',
         ]);
 
-        $plainPassword = ! empty($validated['password'])
-            ? $validated['password']
-            : \Illuminate\Support\Str::password(12);
-
-        $donor = \Illuminate\Support\Facades\DB::transaction(function () use ($validated, $plainPassword) {
+        $donor = \Illuminate\Support\Facades\DB::transaction(function () use ($validated) {
             $user = User::forceCreate([
                 'name' => trim((string) $validated['name']),
                 'email' => strtolower(trim((string) $validated['email'])),
                 'phone' => \App\Support\PhoneNumber::normalise((string) $validated['phone']),
                 'date_of_birth' => ! empty($validated['date_of_birth']) ? $validated['date_of_birth'] : null,
                 'role' => Role::Donor,
-                'is_active' => true,
+                'is_active' => false,
                 'consent_given_at' => now(),
-                'email_verified_at' => now(),
-                'password' => \Illuminate\Support\Facades\Hash::make($plainPassword),
+                'email_verified_at' => null,
+                'password' => Hash::make(Str::password(64)),
             ]);
 
             $cleanBloodGroup = ! empty($validated['blood_group'])
@@ -133,8 +132,20 @@ class DonorController extends Controller
             return $user;
         });
 
+        $donor->notify(new DonorActivationLink(
+            $donor,
+            URL::temporarySignedRoute('donor.activation.accept', now()->addHours(72), ['user' => $donor->id]),
+        ));
+        AuditLogger::record(auth()->user(), 'donor.activation_link.sent', $donor, [
+            'donor_id' => $donor->id,
+        ]);
+
+        $emailStatus = config('mail.default') === 'log'
+            ? 'The activation email was written to the application log because MAIL_MAILER=log.'
+            : "An activation link was sent to {$donor->email}.";
+
         return redirect()->route('staff.donors.show', $donor)
-            ->with('status', "Donor {$donor->name} registered successfully.");
+            ->with('status', "Donor {$donor->name} was registered. {$emailStatus}");
     }
 
     /**
@@ -164,6 +175,37 @@ class DonorController extends Controller
             'donor' => $user,
             'profile' => $user->donorProfile,
         ]);
+    }
+
+    /**
+     * Resend a signed activation link to an unverified donor.
+     */
+    public function resendActivationLink(User $user): RedirectResponse
+    {
+        Gate::authorize('access-staff');
+
+        if (! $user->isDonor()) {
+            abort(404);
+        }
+
+        if ($user->hasVerifiedEmail()) {
+            return redirect()->route('staff.donors.show', $user)
+                ->with('status', 'This donor account is already activated.');
+        }
+
+        $user->notify(new DonorActivationLink(
+            $user,
+            URL::temporarySignedRoute('donor.activation.accept', now()->addHours(72), ['user' => $user->id]),
+        ));
+        AuditLogger::record(auth()->user(), 'donor.activation_link.sent', $user, [
+            'donor_id' => $user->id,
+        ]);
+
+        $message = config('mail.default') === 'log'
+            ? 'The activation email was written to the application log because MAIL_MAILER=log.'
+            : "An activation link was sent to {$user->email}.";
+
+        return redirect()->route('staff.donors.show', $user)->with('status', $message);
     }
 
     /**

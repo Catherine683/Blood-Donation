@@ -6,6 +6,9 @@ use App\Http\Controllers\Admin\AuditLogController;
 use App\Http\Controllers\Admin\DonationExportController;
 use App\Http\Controllers\Admin\NotificationController as AdminNotificationController;
 use App\Http\Controllers\Admin\SystemStatusController;
+use App\Http\Controllers\Auth\DonorActivationController;
+use App\Http\Controllers\Auth\DonorRegistrationController;
+use App\Http\Controllers\Auth\PasswordResetOtpController;
 use App\Http\Controllers\DashboardRedirectController;
 use App\Http\Controllers\Donor\AppointmentController;
 use App\Http\Controllers\Donor\HistoryController;
@@ -26,8 +29,6 @@ use App\Livewire\Admin\StaffManagement;
 use App\Livewire\Staff\DriveRoster;
 use Illuminate\Support\Facades\Route;
 use Laravel\Fortify\Http\Controllers\EmailVerificationNotificationController;
-use Laravel\Fortify\Http\Controllers\PasswordResetLinkController;
-use Laravel\Fortify\Http\Controllers\RegisteredUserController;
 
 /*
 |--------------------------------------------------------------------------
@@ -62,13 +63,33 @@ Route::post('/unsubscribe/announcements/{user}', [UnsubscribeController::class, 
     ->name('unsubscribe.announcements.post')
     ->middleware(['signed', 'throttle:unsubscribe']);
 
-Route::post('/register', [RegisteredUserController::class, 'store'])
+Route::post('/register', [DonorRegistrationController::class, 'store'])
     ->middleware(['web', 'guest', 'throttle:registration'])
     ->name('register.store');
 
-Route::post('/forgot-password', [PasswordResetLinkController::class, 'store'])
+Route::get('/register/otp', [DonorRegistrationController::class, 'create'])
+    ->middleware(['web', 'guest'])
+    ->name('register.otp');
+
+Route::post('/register/otp', [DonorRegistrationController::class, 'verify'])
+    ->middleware(['web', 'guest', 'throttle:registration-otp-verify'])
+    ->name('register.otp.verify');
+
+Route::post('/register/otp/resend', [DonorRegistrationController::class, 'resend'])
+    ->middleware(['web', 'guest', 'throttle:registration-otp-resend'])
+    ->name('register.otp.resend');
+
+Route::post('/forgot-password', [PasswordResetOtpController::class, 'store'])
     ->middleware(['web', 'guest', 'throttle:forgot-password'])
     ->name('password.email');
+
+Route::get('/forgot-password/otp', [PasswordResetOtpController::class, 'create'])
+    ->middleware(['web', 'guest'])
+    ->name('password.otp');
+
+Route::post('/forgot-password/otp', [PasswordResetOtpController::class, 'verify'])
+    ->middleware(['web', 'guest', 'throttle:password-otp-verify'])
+    ->name('password.otp.verify');
 
 Route::post('/email/verification-notification', [EmailVerificationNotificationController::class, 'store'])
     ->middleware(['web', 'auth', 'throttle:verification-resend'])
@@ -118,6 +139,14 @@ Route::get('/staff/invitation/{user}', [InvitationController::class, 'show'])
     ->middleware('signed');
 Route::post('/staff/invitation/{user}', [InvitationController::class, 'store'])
     ->name('staff.invitation.store')
+    ->middleware('signed');
+
+// Staff-created donor activation via signed link
+Route::get('/donor/activation/{user}', [DonorActivationController::class, 'show'])
+    ->name('donor.activation.accept')
+    ->middleware('signed');
+Route::post('/donor/activation/{user}', [DonorActivationController::class, 'store'])
+    ->name('donor.activation.store')
     ->middleware('signed');
 
 /*
@@ -171,6 +200,7 @@ Route::middleware(['auth', 'verified', 'role:staff'])
         Route::post('/donors', [DonorController::class, 'store'])->name('donors.store');
         Route::get('/donors/{user}', [DonorController::class, 'show'])->name('donors.show');
         Route::put('/donors/{user}', [DonorController::class, 'update'])->name('donors.update');
+        Route::post('/donors/{user}/activation-email', [DonorController::class, 'resendActivationLink'])->middleware('throttle:invitation-resend')->name('donors.activation-email');
         Route::post('/donors/{user}/donation-records/{record}/correct', [DonorController::class, 'correctDonation'])->name('donors.records.correct');
     });
 

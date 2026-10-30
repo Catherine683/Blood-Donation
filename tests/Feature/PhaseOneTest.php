@@ -51,7 +51,7 @@ test('registration with valid input creates a donor, donor profile and consent_g
     ]);
 
     $response->assertSessionHasNoErrors();
-    $response->assertRedirect(route('verification.notice'));
+    $response->assertRedirect(route('register.otp', ['email' => 'kato.paul@example.ug']));
 
     $user = User::query()->where('email', 'kato.paul@example.ug')->first();
     expect($user)->not->toBeNull()
@@ -211,12 +211,16 @@ test('donor profile update works and changing email triggers re-verification', f
         'name' => 'Verified Donor Renamed',
         'phone' => '0772555666',
         'date_of_birth' => '1992-02-02',
+        'notify_new_drives' => '0',
     ]);
 
     $response->assertRedirect(route('donor.profile'));
 
     $donor->refresh();
     expect($donor->name)->toBe('Verified Donor Renamed')
+        ->and($donor->phone)->toBe('+256772555666')
+        ->and($donor->date_of_birth->format('Y-m-d'))->toBe('1992-02-02')
+        ->and($donor->notify_new_drives)->toBeFalse()
         ->and($donor->email)->toBe('verified.donor@example.ug')
         ->and($donor->email_verified_at)->not->toBeNull();
 });

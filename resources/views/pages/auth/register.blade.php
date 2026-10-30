@@ -3,7 +3,7 @@
         {{-- Unified Standard Auth Header --}}
         <x-auth-header
             :title="__('Register as a Donor')"
-            :description="__('Join voluntary blood donors in Uganda and schedule blood donations with UBTS.')"
+            :description="__('Join voluntary blood donors in Uganda. Verify your email with a one-time code to activate your account.')"
         />
 
         {{-- Registration Form: Clean, Balanced 2-Column Desktop Grid --}}
@@ -100,8 +100,8 @@
                         type="button"
                         x-on:click="showPassword = !showPassword"
                         class="absolute inset-y-0 right-0 pr-3 flex items-center text-neutral-400 hover:text-neutral-600 cursor-pointer"
-                        tabindex="-1"
-                        aria-label="Toggle password visibility"
+                        x-bind:aria-label="showPassword ? 'Hide password' : 'Show password'"
+                        x-bind:aria-pressed="showPassword"
                     >
                         <svg x-show="!showPassword" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -133,8 +133,8 @@
                         type="button"
                         x-on:click="showConfirm = !showConfirm"
                         class="absolute inset-y-0 right-0 pr-3 flex items-center text-neutral-400 hover:text-neutral-600 cursor-pointer"
-                        tabindex="-1"
-                        aria-label="Toggle password confirmation visibility"
+                        x-bind:aria-label="showConfirm ? 'Hide password confirmation' : 'Show password confirmation'"
+                        x-bind:aria-pressed="showConfirm"
                     >
                         <svg x-show="!showConfirm" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />

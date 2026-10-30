@@ -102,7 +102,7 @@
                                     <td class="px-4 py-3">
                                         @if ($donor->donorProfile?->blood_group)
                                             <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold bg-primary-50 text-primary-800 border border-primary-200/60 font-mono">
-                                                {{ $donor->donorProfile->blood_group->label() }}
+                                                {{ $donor->donorProfile->blood_group }}
                                             </span>
                                         @else
                                             <span class="text-neutral-400 text-xs">Pending typing</span>

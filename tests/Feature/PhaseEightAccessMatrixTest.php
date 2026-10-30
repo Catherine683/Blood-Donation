@@ -219,6 +219,20 @@ class PhaseEightAccessMatrixTest extends TestCase
                 'staff' => 'redirect',
                 'admin' => 'redirect',
             ],
+            'donor.activation.accept' => [
+                'guest' => '200',
+                'unverified' => '200',
+                'donor' => '200',
+                'staff' => '200',
+                'admin' => '200',
+            ],
+            'donor.activation.store' => [
+                'guest' => 'redirect',
+                'unverified' => 'redirect',
+                'donor' => 'redirect',
+                'staff' => 'redirect',
+                'admin' => 'redirect',
+            ],
 
             // Auth / Fortify Routes
             'login' => [
@@ -256,6 +270,27 @@ class PhaseEightAccessMatrixTest extends TestCase
                 'staff' => 'redirect_dashboard',
                 'admin' => 'redirect_dashboard',
             ],
+            'register.otp' => [
+                'guest' => '200',
+                'unverified' => 'redirect_dashboard',
+                'donor' => 'redirect_dashboard',
+                'staff' => 'redirect_dashboard',
+                'admin' => 'redirect_dashboard',
+            ],
+            'register.otp.verify' => [
+                'guest' => 'action',
+                'unverified' => 'redirect_dashboard',
+                'donor' => 'redirect_dashboard',
+                'staff' => 'redirect_dashboard',
+                'admin' => 'redirect_dashboard',
+            ],
+            'register.otp.resend' => [
+                'guest' => 'action',
+                'unverified' => 'redirect_dashboard',
+                'donor' => 'redirect_dashboard',
+                'staff' => 'redirect_dashboard',
+                'admin' => 'redirect_dashboard',
+            ],
             'password.request' => [
                 'guest' => '200',
                 'unverified' => 'redirect_dashboard',
@@ -264,6 +299,20 @@ class PhaseEightAccessMatrixTest extends TestCase
                 'admin' => 'redirect_dashboard',
             ],
             'password.email' => [
+                'guest' => 'action',
+                'unverified' => 'redirect_dashboard',
+                'donor' => 'redirect_dashboard',
+                'staff' => 'redirect_dashboard',
+                'admin' => 'redirect_dashboard',
+            ],
+            'password.otp' => [
+                'guest' => '200',
+                'unverified' => 'redirect_dashboard',
+                'donor' => 'redirect_dashboard',
+                'staff' => 'redirect_dashboard',
+                'admin' => 'redirect_dashboard',
+            ],
+            'password.otp.verify' => [
                 'guest' => 'action',
                 'unverified' => 'redirect_dashboard',
                 'donor' => 'redirect_dashboard',
@@ -577,6 +626,20 @@ class PhaseEightAccessMatrixTest extends TestCase
                 'staff' => '200',
                 'admin' => '200',
             ],
+            'staff.donors.create' => [
+                'guest' => 'redirect_login',
+                'unverified' => 'redirect_verify',
+                'donor' => '403',
+                'staff' => '200',
+                'admin' => '200',
+            ],
+            'staff.donors.store' => [
+                'guest' => 'redirect_login',
+                'unverified' => 'redirect_verify',
+                'donor' => '403',
+                'staff' => 'action',
+                'admin' => 'action',
+            ],
             'staff.donors.show' => [
                 'guest' => 'redirect_login',
                 'unverified' => 'redirect_verify',
@@ -585,6 +648,13 @@ class PhaseEightAccessMatrixTest extends TestCase
                 'admin' => '200',
             ],
             'staff.donors.update' => [
+                'guest' => 'redirect_login',
+                'unverified' => 'redirect_verify',
+                'donor' => '403',
+                'staff' => 'action',
+                'admin' => 'action',
+            ],
+            'staff.donors.activation-email' => [
                 'guest' => 'redirect_login',
                 'unverified' => 'redirect_verify',
                 'donor' => '403',
@@ -879,6 +949,8 @@ class PhaseEightAccessMatrixTest extends TestCase
         $this->withoutMiddleware(ValidateCsrfToken::class);
 
         RateLimiter::clear(Str::lower('forgot@example.com').'|127.0.0.1');
+        RateLimiter::clear('missing@example.com|127.0.0.1');
+        RateLimiter::clear(md5('registration-otp-resendmissing@example.com|127.0.0.1'));
         RateLimiter::clear('127.0.0.1');
 
         if ($user !== null) {
@@ -931,14 +1003,15 @@ class PhaseEightAccessMatrixTest extends TestCase
         $routeName = $route->getName() ?? '';
 
         $isDraftOnlyRoute = in_array($routeName, ['staff.drives.destroy', 'staff.drives.publish'], true);
-        $isDonorTargetRoute = in_array($routeName, ['staff.donors.show', 'staff.donors.update', 'staff.donors.records.correct', 'donor.email.verify-change'], true);
+        $isDonorTargetRoute = in_array($routeName, ['staff.donors.show', 'staff.donors.update', 'staff.donors.activation-email', 'staff.donors.records.correct', 'donor.email.verify-change'], true);
         $isInvitationRoute = in_array($routeName, ['staff.invitation.accept', 'staff.invitation.store'], true);
+        $isDonorActivationRoute = in_array($routeName, ['donor.activation.accept', 'donor.activation.store'], true);
 
         foreach ($paramNames as $name) {
             $params[$name] = match ($name) {
                 'drive' => $isDraftOnlyRoute ? $this->draftDrive->id : $this->drive->id,
                 'slot' => $this->slot->id,
-                'user' => $isInvitationRoute
+                'user' => $isInvitationRoute || $isDonorActivationRoute
                     ? $this->unverifiedDonor->id
                     : ($isDonorTargetRoute ? $this->verifiedDonor->id : ($user ? $user->id : $this->verifiedDonor->id)),
                 'record' => $this->donationRecord->id,
@@ -977,9 +1050,28 @@ class PhaseEightAccessMatrixTest extends TestCase
                 'outcome' => 'deferred',
                 'explanation' => 'Matrix test correction explanation.',
             ],
+            'staff.donors.store' => [
+                'name' => 'Matrix Donor',
+                'email' => 'matrix-donor@example.com',
+                'phone' => '0772123456',
+            ],
             'login.store' => ['email' => 'test@example.com', 'password' => 'secret'],
-            'register.store' => ['email' => 'reg@example.com', 'name' => 'Test Reg'],
+            'register.store' => [
+                'email' => 'reg@example.com',
+                'name' => 'Test Reg',
+                'phone' => '0772123456',
+                'password' => 'Password123!',
+                'password_confirmation' => 'Password123!',
+                'consent' => '1',
+            ],
+            'register.otp.verify' => ['email' => 'missing@example.com', 'code' => '000000'],
+            'register.otp.resend' => ['email' => 'missing@example.com'],
+            'donor.activation.store' => [
+                'password' => 'Password123!',
+                'password_confirmation' => 'Password123!',
+            ],
             'password.email' => ['email' => 'forgot-'.uniqid().'@example.com'],
+            'password.otp.verify' => ['email' => 'forgot@example.com', 'code' => '000000'],
             default => [],
         };
     }

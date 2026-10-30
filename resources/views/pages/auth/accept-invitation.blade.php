@@ -24,10 +24,9 @@
             <!-- Password -->
             <div>
                 <x-label for="password" value="Password (min 8 characters)" required />
-                <x-input
+                <x-password-input
                     id="password"
                     name="password"
-                    type="password"
                     required
                     autofocus
                     autocomplete="new-password"
@@ -40,10 +39,9 @@
             <!-- Confirm Password -->
             <div>
                 <x-label for="password_confirmation" value="Confirm password" required />
-                <x-input
+                <x-password-input
                     id="password_confirmation"
                     name="password_confirmation"
-                    type="password"
                     required
                     autocomplete="new-password"
                     placeholder="••••••••••••"

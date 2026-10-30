@@ -196,42 +196,6 @@
                 </div>
             </div>
 
-            {{-- Card 3: Security & Access Credentials --}}
-            <div class="bg-white rounded-2xl border border-neutral-200/80 shadow-xs overflow-hidden">
-                <div class="px-6 py-4 border-b border-neutral-100 bg-neutral-50/50 flex items-center justify-between">
-                    <div class="flex items-center gap-2.5">
-                        <div class="size-8 rounded-lg bg-primary-100 text-primary-700 flex items-center justify-center font-bold text-sm">
-                            3
-                        </div>
-                        <div>
-                            <h2 class="text-sm font-bold text-neutral-900">Account Access & Security</h2>
-                            <p class="text-xs text-neutral-500">Initial portal password configuration</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="p-6 space-y-4">
-                    <div class="max-w-md">
-                        <label for="password" class="block text-xs font-semibold text-neutral-800 uppercase tracking-wider mb-1.5">
-                            Initial Password (Optional)
-                        </label>
-                        <input
-                            id="password"
-                            name="password"
-                            type="password"
-                            placeholder="Leave blank to auto-generate secure password"
-                            class="w-full text-sm rounded-xl border border-neutral-300 px-3.5 py-2.5 focus:ring-4 focus:ring-primary-500/15 focus:border-primary-600 transition-all outline-none"
-                        />
-                        <p class="text-[11px] text-neutral-500 mt-1">
-                            If left blank, a secure random password will be assigned. The donor can reset their password via email anytime.
-                        </p>
-                        @error('password')
-                            <p class="text-xs text-danger-600 mt-1 font-medium">{{ $message }}</p>
-                        @enderror
-                    </div>
-                </div>
-            </div>
-
             {{-- Action Row --}}
             <div class="flex items-center justify-end gap-3 pt-4">
                 <x-button :href="route('staff.donors')" variant="secondary" size="md" class="min-h-[44px]">

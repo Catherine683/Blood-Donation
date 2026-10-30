@@ -57,8 +57,8 @@
                         type="button"
                         x-on:click="showPassword = !showPassword"
                         class="absolute inset-y-0 right-0 pr-3.5 flex items-center text-neutral-400 hover:text-neutral-700 cursor-pointer transition-colors"
-                        tabindex="-1"
-                        aria-label="Toggle password visibility"
+                        x-bind:aria-label="showPassword ? 'Hide password' : 'Show password'"
+                        x-bind:aria-pressed="showPassword"
                     >
                         <svg x-show="!showPassword" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
